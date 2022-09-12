@@ -128,6 +128,8 @@ class USDataset(Dataset):
         enhance_image = item.enhance_image.crop(rect)
         plain_image = item.plain_image.crop(rect)
 
+        # TODO: rotate
+
         e = np.array(enhance_image.resize((self.size, self.size)))
         p = np.array(plain_image.resize((self.size, self.size)))
         dummy = np.zeros((self.size, self.size), dtype=np.uint8)
@@ -168,13 +170,6 @@ class C(Commander):
         p_mean, p_std = calc_mean_and_std([item.plain_image for item in self.ds.items])
         print('p_mean', p_mean)
         print('p_std', p_std)
-
-    def run_t(self):
-        for (x, y) in self.ds:
-            self.x = x
-            self.y = y
-            print(y, x.shape)
-            break
 
     def run_t(self):
         for (x, y) in self.ds:
