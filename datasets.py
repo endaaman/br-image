@@ -15,6 +15,7 @@ import torchvision.transforms.functional as F
 from PIL import Image, ImageOps
 from PIL.Image import Image as img
 from torch.utils.data import Dataset
+from sklearn.model_selection import train_test_split
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 
@@ -79,28 +80,27 @@ P_STD  = 0.1659
 
 
 class USDataset(Dataset):
-    def __init__(self, test=False, size=256):
+    def __init__(self, test=False, size=256, a_flip=False, a_rotate=0, a_shrink=0):
+        self.test = test
         self.size = size
+        self.a_flip = a_flip
+        self.a_rotate = a_rotate
+        self.a_shrink = a_shrink
         self.load_data()
 
-    def load_data(self, ):
-        self.df = pd.read_excel('data/labels.xlsx', index_col=0)
+    def load_data(self):
+        df = pd.read_csv('data/cache/labels.tsv', index_col=0, sep='\t')
+        df = df[df['test'] == self.test]
 
+        self.df = df
         self.items = []
-        paths = sorted(glob(f'data/images/*.png'))
-        for p in paths:
-            basename = os.path.basename(p)
-            m = re.match(r'^([0-9]{3})\.png$', basename)
-            if not m:
-                raise ValueError(f'{p} is invalid formatting.')
-            idx = int(m[1]) # trim zeros
-            row = self.df.loc[idx]
+        for idx, row in self.df.iterrows():
+            p = f'data/images/{idx:03}.png'
             original_image = Image.open(p)
             rule = None
             for r in roi_rules:
                 if r.code == row['image_type']:
                     rule = r
-                    break
             if not rule:
                 raise ValueError(f'{p} is unknown image type.')
 
@@ -113,22 +113,20 @@ class USDataset(Dataset):
     def __len__(self):
         return len(self.items)
 
-    def __getitem__(self, idx):
-        MAX_SHRINK = 0.3
+    def aug(self, item, a_flip, a_shrink, a_rotate):
+        angle = np.random.randint(0, a_rotate*2+1) - a_rotate
+        enhance_image = item.enhance_image.rotate(angle, expand=False)
+        plain_image = item.plain_image.rotate(angle, expand=False)
 
-        item = self.items[idx]
-
-        mini_side = min(item.plain_image.size)
-        shrink = np.random.rand() * MAX_SHRINK
+        mini_side = min(plain_image.size)
+        shrink = np.random.rand() * a_shrink
         offset = round(mini_side * shrink)
         size = mini_side - offset
-        x = np.random.randint(0, item.plain_image.width - size)
-        y = np.random.randint(0, item.plain_image.height - size)
+        x = np.random.randint(0, max(plain_image.width - size, 1))
+        y = np.random.randint(0, max(plain_image.height - size, 1))
         rect = (x, y, x + size, y + size)
-        enhance_image = item.enhance_image.crop(rect)
-        plain_image = item.plain_image.crop(rect)
-
-        # TODO: rotate
+        enhance_image = enhance_image.crop(rect)
+        plain_image = plain_image.crop(rect)
 
         e = np.array(enhance_image.resize((self.size, self.size)))
         p = np.array(plain_image.resize((self.size, self.size)))
@@ -140,19 +138,52 @@ class USDataset(Dataset):
         ep[:, :, 1] = (ep[:, :, 1] - P_MEAN) / P_STD
         t = torch.from_numpy(ep) / 255
 
-        if 0.5 < np.random.rand():
+        if a_flip and 0.5 < np.random.rand():
             t = torch.flip(t, (2, ))
 
-        return t, item.diagnosis
+        return t
+
+    def __getitem__(self, idx):
+        item = self.items[idx]
+        if self.test:
+            t = self.aug(item, False, 0, 0)
+        else:
+            t = self.aug(item, self.a_flip, self.a_shrink, self.a_rotate)
+
+        return t, torch.FloatTensor([item.diagnosis])
 
 
 
 class C(Commander):
+    def arg_split(self, parser):
+        parser.add_argument('--ratio', '-r', type=float, default=0.3)
+
+    def run_split(self):
+        df = pd.read_excel('data/master.xlsx', index_col=0).dropna()
+        df_train, df_test = train_test_split(df, test_size=self.args.ratio, stratify=df.diagnosis)
+        df['test'] = 0
+        df.at[df_test.index, 'test'] = 1
+        p = 'data/cache/labels.tsv'
+        df.to_csv(p, sep='\t')
+        print(f'wrote {p}')
+
+    def arg_common(self, parser):
+        parser.add_argument('--test', '-t', action='store_true')
+        parser.add_argument('--flip', action='store_true')
+        parser.add_argument('--rotate', type=int, default=10)
+        parser.add_argument('--shrink', type=float, default=0.3)
+
     def pre_common(self):
-        self.ds = USDataset()
+        self.ds = USDataset(
+            test=self.args.test,
+            a_flip=self.args.flip,
+            a_shrink=self.args.shrink,
+            a_rotate=self.args.rotate,
+        )
 
     def run_dump_ep(self):
-        for i in tqdm(self.ds.items):
+        ds = USDataset()
+        for i in tqdm(ds.items):
             i.enhance_image.save(f'out/ep/{i.id:03}e.png')
             i.plain_image.save(f'out/ep/{i.id:03}p.png')
 
@@ -171,6 +202,18 @@ class C(Commander):
         print('p_mean', p_mean)
         print('p_std', p_std)
 
+    def run_samples(self):
+        t = 'test' if self.args.test else 'train'
+        d = f'tmp/samples_{t}'
+        os.makedirs(d, exist_ok=True)
+        for i, (x, y) in enumerate(self.ds):
+            if i > len(self.ds):
+                break
+            self.x = x
+            self.y = y
+            img = tensor_to_pil(x)
+            img.save(f'{d}/{i}_{int(y)}.png')
+
     def run_t(self):
         for (x, y) in self.ds:
             self.x = x
@@ -185,5 +228,5 @@ if __name__ == '__main__':
     #     print(x.shape)
     #     print(y)
     #     break
-    c = C()
+    c = C(options={'no_pre_common': ['split']})
     c.run()
