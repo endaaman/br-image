@@ -151,9 +151,14 @@ class C(Commander):
 
     def run_dump_ep(self):
         for i in tqdm(self.ds.items):
-            i.enhance_image.save(f'data/ep/{i.id:03}e.png')
-            i.plain_image.save(f'data/ep/{i.id:03}p.png')
-        print('done')
+            i.enhance_image.save(f'out/ep/{i.id:03}e.png')
+            i.plain_image.save(f'out/ep/{i.id:03}p.png')
+
+            e = np.array(i.enhance_image)
+            p = np.array(i.plain_image)
+            dummy = np.zeros(e.size, dtype=np.uint8).reshape(e.shape)
+            pe = Image.fromarray(np.stack([e, p, dummy], 2))
+            pe.save(f'out/ep/{i.id:03}ep.png')
 
     def run_mean_std(self):
         e_mean, e_std = calc_mean_and_std([item.enhance_image for item in self.ds.items])
