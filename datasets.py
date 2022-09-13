@@ -133,6 +133,28 @@ class USDataset(Dataset):
         dummy = np.zeros((self.size, self.size), dtype=np.uint8)
         ep = np.stack([e, p, dummy], 0)
 
+
+        # self.albu = A.ReplayCompose([
+        #     *augs,
+        #     A.Normalize(*[[v] * 3 for v in [mean, std]]) if self.normalized else None,
+        #     ToTensorV2(),
+        # ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']))
+        # A.RandomResizedCrop(width=image_size, height=image_size, scale=[0.7, 1.0]),
+        # A.HorizontalFlip(p=0.5),
+        # A.GaussNoise(p=0.2),
+        # A.OneOf([
+        #     A.MotionBlur(p=.2),
+        #     A.MedianBlur(blur_limit=3, p=0.1),
+        #     A.Blur(blur_limit=3, p=0.1),
+        # ], p=0.2),
+        # A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=5, p=0.5),
+        # A.OneOf([
+        #     A.CLAHE(clip_limit=2),
+        #     A.Emboss(),
+        #     A.RandomBrightnessContrast(),
+        # ], p=0.3),
+        # A.HueSaturationValue(p=0.3),
+
         # normalize
         ep[:, :, 0] = (ep[:, :, 0] - E_MEAN) / E_STD
         ep[:, :, 1] = (ep[:, :, 1] - P_MEAN) / P_STD
@@ -163,6 +185,7 @@ class C(Commander):
         df_train, df_test = train_test_split(df, test_size=self.args.ratio, stratify=df.diagnosis)
         df['test'] = 0
         df.at[df_test.index, 'test'] = 1
+        os.makedirs('data/cache', exist_ok=True)
         p = 'data/cache/labels.tsv'
         df.to_csv(p, sep='\t')
         print(f'wrote {p}')
