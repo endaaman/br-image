@@ -92,6 +92,8 @@ class MaximumSquareCrop(ImageOnlyTransform):
         return center_crop(img, side, side)
 
 
+SCALE = 1
+
 class USDataset(Dataset):
     def __init__(self, test=False, size=256, a_flip=False, a_rotate=0, a_shrink=0):
         self.test = test
@@ -167,10 +169,10 @@ class USDataset(Dataset):
                                    ep, original_image, enhance_image, plain_image))
 
     def __len__(self):
-        return len(self.items)
+        return len(self.items) * SCALE
 
     def __getitem__(self, idx):
-        item = self.items[idx]
+        item = self.items[idx % len(self.items)]
         t = self.albu(image=np.array(item.image))['image']
         return t, torch.FloatTensor([item.diagnosis])
 

@@ -56,9 +56,19 @@ class VGG(nn.Module):
         return x
 
 
+def create_model(name):
+    if re.match(r'^vgg', name):
+        return VGG(name=name)
+
+    m = re.match(r'^eff_(b[0-4])$', name)
+    if m:
+        return EffNet(name=m[1])
+
+    raise ValueError(f'Invalid name: {name}')
+
 if __name__ == '__main__':
     # m = EffNet('b0')
-    m = VGG('vgg16')
+    m = create_model('vgg16_bn')
     x = torch.rand([3, 3, 256, 256])
     y = m(x)
     print(y)

@@ -10,7 +10,7 @@ import pandas as pd
 from PIL import Image
 from sklearn import metrics
 
-from models import EffNet
+from models import create_model
 from datasets import USDataset
 
 from endaaman.torch import Trainer
@@ -26,7 +26,7 @@ def binary_auc_fn(outputs, labels):
     y_pred = outputs.cpu().flatten().detach().numpy()
     return metrics.roc_auc_score(y_true, y_pred)
 
-available_models = [f'b{i}' for i in range(6)]
+available_models = [f'eff_b{i}' for i in range(6)] + ['vgg_{i}_bn' for i in [11, 13, 16, 19]]
 
 class C(Trainer):
     def arg_common(self, parser):
@@ -47,7 +47,7 @@ class C(Trainer):
             a_rotate=self.args.rotate,
         )) for t in [True, False]]
 
-        model = EffNet(self.args.model).to(self.device)
+        model = create_model(self.args.model).to(self.device)
         criterion = nn.BCELoss()
 
         def eval_fn(inputs, labels):
@@ -67,7 +67,7 @@ class C(Trainer):
             return loss, outputs
 
         self.train_model(
-            'b0',
+            self.args.model,
             model,
             train_loader,
             test_loader,
