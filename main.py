@@ -26,25 +26,22 @@ def binary_auc_fn(outputs, labels):
     y_pred = outputs.cpu().flatten().detach().numpy()
     return metrics.roc_auc_score(y_true, y_pred)
 
-available_models = [f'eff_b{i}' for i in range(6)] + ['vgg_{i}_bn' for i in [11, 13, 16, 19]]
+available_models = \
+    [f'eff_b{i}' for i in range(6)] + \
+    [f'vgg{i}' for i in [11, 13, 16, 19]] + \
+    [f'vgg{i}_bn' for i in [11, 13, 16, 19]]
 
 class C(Trainer):
     def arg_common(self, parser):
         parser.add_argument('--model', '-m', choices=available_models, default=available_models[0])
 
     def arg_train(self, parser):
-        parser.add_argument('--no-flip', action='store_true')
-        parser.add_argument('--rotate', type=int, default=5)
-        parser.add_argument('--shrink', type=float, default=0.2)
         parser.add_argument('--norm', choices=['l1', 'l2'])
         parser.add_argument('--alpha', type=float, default=0.01)
 
     def run_train(self):
         train_loader, test_loader = [self.as_loader(USDataset(
             test=t,
-            a_flip=not self.args.no_flip,
-            a_shrink=self.args.shrink,
-            a_rotate=self.args.rotate,
         )) for t in [True, False]]
 
         model = create_model(self.args.model).to(self.device)

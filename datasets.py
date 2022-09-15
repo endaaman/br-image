@@ -95,15 +95,14 @@ class MaximumSquareCrop(ImageOnlyTransform):
 SCALE = 1
 
 class USDataset(Dataset):
-    def __init__(self, test=False, size=256, a_flip=False, a_rotate=0, a_shrink=0):
+    def __init__(self, test=False, size=256, normalize=True):
+        print('normalize', normalize)
         self.test = test
         self.size = size
-        self.a_flip = a_flip
-        self.a_rotate = a_rotate
-        self.a_shrink = a_shrink
 
         train_augs = [
             A.RandomResizedCrop(width=size, height=size, scale=[0.7, 1.0]),
+            A.Resize(size, size),
             A.HorizontalFlip(p=0.5),
             A.GaussNoise(p=0.2),
             A.OneOf([
@@ -125,10 +124,14 @@ class USDataset(Dataset):
             A.Resize(size, size),
         ]
 
-        common_augs = [
-            A.Normalize(mean=[E_MEAN, P_STD, 1], std=[E_MEAN, P_STD, 1]),
-            ToTensorV2(),
-        ]
+        if normalize:
+            common_augs = [
+                A.Normalize(mean=[E_MEAN, P_STD, 1], std=[E_MEAN, P_STD, 1]),
+                ToTensorV2(),
+            ]
+        else:
+            common_augs = [ToTensorV2()]
+
         if test:
             self.albu = A.Compose(test_augs + common_augs)
         else:
@@ -152,16 +155,16 @@ class USDataset(Dataset):
             if not rule:
                 raise ValueError(f'{p} is unknown image type.')
 
-            enhance_image = original_image.crop(rule.enhance_roi.rect()).convert('L')
-            plain_image = original_image.crop(rule.plain_roi.rect()).convert('L')
+            plain_image = original_image.crop(rule.enhance_roi.rect()).convert('L')
+            enhance_image = original_image.crop(rule.plain_roi.rect()).convert('L')
             assert enhance_image.size == plain_image.size
             base_size = plain_image.size
-
+            if row['swap']:
+                enhance_image, plain_image = plain_image, enhance_image
             e = np.array(enhance_image.resize(base_size))
             p = np.array(plain_image.resize(base_size))
             # reverse dimension
             dummy = np.zeros(base_size[::-1], dtype=np.uint8)
-            dummy = (e + p) // 2
             ep = np.stack([e, p, dummy], 0).transpose((1, 2, 0))
             ep = Image.fromarray(ep)
 
@@ -178,10 +181,10 @@ class USDataset(Dataset):
 
 
 class C(Commander):
-    def arg_cache(self, parser):
+    def arg_split(self, parser):
         parser.add_argument('--ratio', '-r', type=float, default=0.3)
 
-    def run_cache(self):
+    def run_split(self):
         # cache label data
         df = pd.read_excel('data/master.xlsx', index_col=0).dropna()
         df_train, df_test = train_test_split(df, test_size=self.args.ratio, stratify=df.diagnosis)
@@ -206,23 +209,14 @@ class C(Commander):
     def pre_common(self):
         self.ds = USDataset(
             test=self.args.test,
-            a_flip=self.args.flip,
-            a_shrink=self.args.shrink,
-            a_rotate=self.args.rotate,
+            normalize=self.args.function != 'samples',
         )
 
     def run_dump_ep(self):
-        ds = USDataset()
-        for i in tqdm(ds.items):
-            i.enhance_image.save(f'out/ep/{i.id:03}e.png')
-            i.plain_image.save(f'out/ep/{i.id:03}p.png')
-
-            e = np.array(i.enhance_image)
-            p = np.array(i.plain_image)
-            dummy = np.zeros(e.size, dtype=np.uint8).reshape(e.shape)
-            # dummy = (e + p) / 2
-            pe = Image.fromarray(np.stack([e, p, dummy], 2))
-            pe.save(f'out/ep/{i.id:03}ep.png')
+        for i in tqdm(self.ds.items):
+            i.plain_image.save(f'out/ep/{i.id:03}_0p.png')
+            i.enhance_image.save(f'out/ep/{i.id:03}_1e.png')
+            i.image.save(f'out/ep/{i.id:03}_2ep.png')
 
     def run_mean_std(self):
         e_mean, e_std = calc_mean_and_std([item.enhance_image for item in self.ds.items])
