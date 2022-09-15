@@ -18,11 +18,14 @@ from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
+from albumentations.core.transforms_interface import ImageOnlyTransform
+from albumentations.augmentations.crops.functional import center_crop
 
 
 class Item(NamedTuple):
     id: int
     diagnosis: bool
+    image: img
     original_image: img
     plain_image: img
     enhance_image: img
@@ -79,6 +82,16 @@ P_MEAN = 0.1217
 P_STD  = 0.1659
 
 
+
+class MaximumSquareCrop(ImageOnlyTransform):
+    def __init__(self, always_apply=False, p=1.0):
+        super().__init__(always_apply, p)
+
+    def apply(self, img, **params):
+        side = min(img.shape[:2])
+        return center_crop(img, side, side)
+
+
 class USDataset(Dataset):
     def __init__(self, test=False, size=256, a_flip=False, a_rotate=0, a_shrink=0):
         self.test = test
@@ -86,6 +99,39 @@ class USDataset(Dataset):
         self.a_flip = a_flip
         self.a_rotate = a_rotate
         self.a_shrink = a_shrink
+
+        train_augs = [
+            A.RandomResizedCrop(width=size, height=size, scale=[0.7, 1.0]),
+            A.HorizontalFlip(p=0.5),
+            A.GaussNoise(p=0.2),
+            A.OneOf([
+                A.MotionBlur(p=.2),
+                A.MedianBlur(blur_limit=3, p=0.1),
+                A.Blur(blur_limit=3, p=0.1),
+            ], p=0.2),
+            A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=5, p=0.5),
+            A.OneOf([
+                A.CLAHE(clip_limit=2),
+                A.Emboss(),
+                A.RandomBrightnessContrast(),
+            ], p=0.3),
+            # A.HueSaturationValue(p=0.3),
+        ]
+
+        test_augs = [
+            MaximumSquareCrop(),
+            A.Resize(size, size),
+        ]
+
+        common_augs = [
+            A.Normalize(mean=[E_MEAN, P_STD, 1], std=[E_MEAN, P_STD, 1]),
+            ToTensorV2(),
+        ]
+        if test:
+            self.albu = A.Compose(test_augs + common_augs)
+        else:
+            self.albu = A.Compose(train_augs + common_augs)
+
         self.load_data()
 
     def load_data(self):
@@ -107,80 +153,34 @@ class USDataset(Dataset):
             enhance_image = original_image.crop(rule.enhance_roi.rect()).convert('L')
             plain_image = original_image.crop(rule.plain_roi.rect()).convert('L')
             assert enhance_image.size == plain_image.size
+            base_size = plain_image.size
+
+            e = np.array(enhance_image.resize(base_size))
+            p = np.array(plain_image.resize(base_size))
+            # reverse dimension
+            dummy = np.zeros(base_size[::-1], dtype=np.uint8)
+            dummy = (e + p) // 2
+            ep = np.stack([e, p, dummy], 0).transpose((1, 2, 0))
+            ep = Image.fromarray(ep)
+
             self.items.append(Item(idx, row['diagnosis'],
-                                   original_image, enhance_image, plain_image))
+                                   ep, original_image, enhance_image, plain_image))
 
     def __len__(self):
         return len(self.items)
 
-    def aug(self, item, a_flip, a_shrink, a_rotate):
-        angle = np.random.randint(0, a_rotate*2+1) - a_rotate
-        enhance_image = item.enhance_image.rotate(angle, expand=False)
-        plain_image = item.plain_image.rotate(angle, expand=False)
-
-        mini_side = min(plain_image.size)
-        shrink = np.random.rand() * a_shrink
-        offset = round(mini_side * shrink)
-        size = mini_side - offset
-        x = np.random.randint(0, max(plain_image.width - size, 1))
-        y = np.random.randint(0, max(plain_image.height - size, 1))
-        rect = (x, y, x + size, y + size)
-        enhance_image = enhance_image.crop(rect)
-        plain_image = plain_image.crop(rect)
-
-        e = np.array(enhance_image.resize((self.size, self.size)))
-        p = np.array(plain_image.resize((self.size, self.size)))
-        dummy = np.zeros((self.size, self.size), dtype=np.uint8)
-        ep = np.stack([e, p, dummy], 0)
-
-
-        # self.albu = A.ReplayCompose([
-        #     *augs,
-        #     A.Normalize(*[[v] * 3 for v in [mean, std]]) if self.normalized else None,
-        #     ToTensorV2(),
-        # ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']))
-        # A.RandomResizedCrop(width=image_size, height=image_size, scale=[0.7, 1.0]),
-        # A.HorizontalFlip(p=0.5),
-        # A.GaussNoise(p=0.2),
-        # A.OneOf([
-        #     A.MotionBlur(p=.2),
-        #     A.MedianBlur(blur_limit=3, p=0.1),
-        #     A.Blur(blur_limit=3, p=0.1),
-        # ], p=0.2),
-        # A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=5, p=0.5),
-        # A.OneOf([
-        #     A.CLAHE(clip_limit=2),
-        #     A.Emboss(),
-        #     A.RandomBrightnessContrast(),
-        # ], p=0.3),
-        # A.HueSaturationValue(p=0.3),
-
-        # normalize
-        ep[:, :, 0] = (ep[:, :, 0] - E_MEAN) / E_STD
-        ep[:, :, 1] = (ep[:, :, 1] - P_MEAN) / P_STD
-        t = torch.from_numpy(ep) / 255
-
-        if a_flip and 0.5 < np.random.rand():
-            t = torch.flip(t, (2, ))
-
-        return t
-
     def __getitem__(self, idx):
         item = self.items[idx]
-        if self.test:
-            t = self.aug(item, False, 0, 0)
-        else:
-            t = self.aug(item, self.a_flip, self.a_shrink, self.a_rotate)
-
+        t = self.albu(image=np.array(item.image))['image']
         return t, torch.FloatTensor([item.diagnosis])
 
 
-
 class C(Commander):
-    def arg_split(self, parser):
+    def arg_cache(self, parser):
         parser.add_argument('--ratio', '-r', type=float, default=0.3)
 
-    def run_split(self):
+    def run_cache(self):
+        # cache label data
         df = pd.read_excel('data/master.xlsx', index_col=0).dropna()
         df_train, df_test = train_test_split(df, test_size=self.args.ratio, stratify=df.diagnosis)
         df['test'] = 0
@@ -188,6 +188,11 @@ class C(Commander):
         os.makedirs('data/cache', exist_ok=True)
         p = 'data/cache/labels.tsv'
         df.to_csv(p, sep='\t')
+
+        # cache images
+        for f in glob('data/images/*.png'):
+            basename = os.path.basename(f)
+
         print(f'wrote {p}')
 
     def arg_common(self, parser):
@@ -213,6 +218,7 @@ class C(Commander):
             e = np.array(i.enhance_image)
             p = np.array(i.plain_image)
             dummy = np.zeros(e.size, dtype=np.uint8).reshape(e.shape)
+            # dummy = (e + p) / 2
             pe = Image.fromarray(np.stack([e, p, dummy], 2))
             pe.save(f'out/ep/{i.id:03}ep.png')
 

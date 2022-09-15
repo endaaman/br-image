@@ -3,6 +3,7 @@ import re
 from glob import glob
 
 import numpy as np
+import torch
 from torch import nn
 from tqdm import tqdm
 import pandas as pd
@@ -35,6 +36,8 @@ class C(Trainer):
         parser.add_argument('--no-flip', action='store_true')
         parser.add_argument('--rotate', type=int, default=5)
         parser.add_argument('--shrink', type=float, default=0.2)
+        parser.add_argument('--norm', choices=['l1', 'l2'])
+        parser.add_argument('--alpha', type=float, default=0.01)
 
     def run_train(self):
         train_loader, test_loader = [self.as_loader(USDataset(
@@ -50,6 +53,17 @@ class C(Trainer):
         def eval_fn(inputs, labels):
             outputs = model(inputs.to(self.device))
             loss = criterion(outputs, labels.to(self.device))
+
+            if self.args.norm in ['l1', 'l2']:
+                l = torch.tensor(0., requires_grad=True)
+                if self.args.norm == 'l1':
+                    for w in model.parameters():
+                        l = l + torch.norm(w, 1)
+                elif self.args.norm == 'l2':
+                    for w in model.parameters():
+                        l = l + torch.norm(w)**2
+                loss += l * self.args.alpha
+
             return loss, outputs
 
         self.train_model(
@@ -65,7 +79,7 @@ class C(Trainer):
 
 if __name__ == '__main__':
     c = C({
-        'epoch': 100,
+        'epoch': 50,
         'lr': 0.001,
         'batch_size': 128,
     })
