@@ -93,8 +93,8 @@ class MaximumSquareCrop(ImageOnlyTransform):
 SCALE = 1
 
 class USDataset(Dataset):
-    def __init__(self, test=False, size=256, normalize=True):
-        self.test = test
+    def __init__(self, target='all', size=256, normalize=True):
+        self.target = target
         self.size = size
 
         train_augs = [
@@ -129,7 +129,7 @@ class USDataset(Dataset):
         else:
             common_augs = [ToTensorV2()]
 
-        if test:
+        if target == 'test':
             self.albu = A.Compose(test_augs + common_augs)
         else:
             self.albu = A.Compose(train_augs + common_augs)
@@ -138,7 +138,10 @@ class USDataset(Dataset):
 
     def load_data(self):
         df = pd.read_csv('data/cache/labels.csv', index_col=0)
-        df = df[df['test'] == self.test]
+        if self.target == 'test':
+            df = df[df['test'] == 1]
+        elif self.target == 'train':
+            df = df[df['test'] == 0]
 
         self.df = df
         self.items = []
@@ -195,14 +198,14 @@ class C(Commander):
         print(f'wrote {p}')
 
     def arg_common(self, parser):
-        parser.add_argument('--test', '-t', action='store_true')
+        parser.add_argument('--target', '-t', default='all', choices=['all', 'train', 'test'])
         parser.add_argument('--flip', action='store_true')
         parser.add_argument('--rotate', type=int, default=10)
         parser.add_argument('--shrink', type=float, default=0.3)
 
     def pre_common(self):
         self.ds = USDataset(
-            test=self.args.test,
+            target=self.args.target,
             normalize=self.args.function != 'samples',
         )
 
@@ -231,7 +234,7 @@ class C(Commander):
         print('p_std', p_std)
 
     def run_samples(self):
-        t = 'test' if self.args.test else 'train'
+        t = self.args.target
         d = f'tmp/samples_{t}'
         os.makedirs(d, exist_ok=True)
         for i, (x, y) in enumerate(self.ds):

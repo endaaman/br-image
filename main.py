@@ -41,8 +41,8 @@ class C(Trainer):
 
     def run_train(self):
         train_loader, test_loader = [self.as_loader(USDataset(
-            test=t,
-        )) for t in [True, False]]
+            target=t,
+        )) for t in ['train', 'test']]
 
         model = create_model(self.args.model).to(self.device)
         criterion = nn.BCELoss()
