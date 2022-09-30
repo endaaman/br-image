@@ -4,6 +4,7 @@ import re
 import shutil
 from glob import glob
 from typing import NamedTuple, Callable
+from collections import OrderedDict
 from endaaman import Commander
 from endaaman.torch import calc_mean_and_std, pil_to_tensor, tensor_to_pil
 
@@ -39,48 +40,45 @@ class ROI(NamedTuple):
         return (self.x, self.y, self.x + self.w, self.y + self.h)
 
 class ROIRule(NamedTuple):
-    code: str
     enhance_roi: ROI
     plain_roi: ROI
 
-roi_rules = (
+roi_rules = {
     # VERTICAL
-    ROIRule(
-        'ver_C', # (1280, 960)
+    'ver_C': ROIRule( # (1280, 960)
         ROI(345, 169, 591, 293), # [1] h:169
         ROI(345, 588, 591, 293),
     ),
 
     # HORIZONTAL
-    ROIRule(
-        'hor_A', # (960, 720)
+    'hor_A': ROIRule( # (960, 720)
+
         ROI(62, 87, 417, 495),
         ROI(479, 87, 417, 495),
     ),
-    ROIRule(
-        'hor_B', # (1280, 720)
+
+    'hor_B': ROIRule( # (1280, 720)
+
         ROI(18, 102, 554, 435),
         ROI(605, 102, 554, 435),
     ),
 
-    ROIRule(
-        'hor_C', # (1280, 960)
+    'hor_C': ROIRule( # (1280, 960)
         ROI(116, 144, 520, 658),
         ROI(640, 144, 520, 658),
     ),
-
-    ROIRule(
-        'hor_X', # (1552, 873)
+    'hor_X': ROIRule( # (1552, 873)
         ROI(74, 109, 650, 570),
         ROI(724, 109, 650, 570),
     ),
-)
+}
 
 E_MEAN = 0.1820
 E_STD  = 0.1372
 P_MEAN = 0.1217
 P_STD  = 0.1659
-
+EP_MEAN = (E_MEAN + P_MEAN) / 2
+EP_STD = (E_STD + P_STD) / 2
 
 
 class MaximumSquareCrop(ImageOnlyTransform):
@@ -96,7 +94,6 @@ SCALE = 1
 
 class USDataset(Dataset):
     def __init__(self, test=False, size=256, normalize=True):
-        print('normalize', normalize)
         self.test = test
         self.size = size
 
@@ -126,7 +123,7 @@ class USDataset(Dataset):
 
         if normalize:
             common_augs = [
-                A.Normalize(mean=[E_MEAN, P_STD, 1], std=[E_MEAN, P_STD, 1]),
+                A.Normalize(mean=[E_MEAN, P_MEAN, EP_MEAN], std=[E_STD, P_STD, EP_STD]),
                 ToTensorV2(),
             ]
         else:
@@ -140,7 +137,7 @@ class USDataset(Dataset):
         self.load_data()
 
     def load_data(self):
-        df = pd.read_csv('data/cache/labels.tsv', index_col=0, sep='\t')
+        df = pd.read_csv('data/cache/labels.csv', index_col=0)
         df = df[df['test'] == self.test]
 
         self.df = df
@@ -148,10 +145,7 @@ class USDataset(Dataset):
         for idx, row in self.df.iterrows():
             p = f'data/images/{idx:03}.png'
             original_image = Image.open(p)
-            rule = None
-            for r in roi_rules:
-                if r.code == row['image_type']:
-                    rule = r
+            rule = roi_rules.get(row['image_type'], None)
             if not rule:
                 raise ValueError(f'{p} is unknown image type.')
 
@@ -191,8 +185,8 @@ class C(Commander):
         df['test'] = 0
         df.at[df_test.index, 'test'] = 1
         os.makedirs('data/cache', exist_ok=True)
-        p = 'data/cache/labels.tsv'
-        df.to_csv(p, sep='\t')
+        p = 'data/cache/labels.csv'
+        df.to_csv(p)
 
         # cache images
         for f in glob('data/images/*.png'):
@@ -212,11 +206,20 @@ class C(Commander):
             normalize=self.args.function != 'samples',
         )
 
+    def arg_dump_ep(self, parser):
+        parser.add_argument('--dest', '-d', type=str, default='out/ep')
+        parser.add_argument('--image', '-i', nargs='+', choices=['e', 'p', 'ep'], default=['e', 'p', 'ep'])
+
     def run_dump_ep(self):
+        d = self.args.dest
+        os.makedirs(d, exist_ok=True)
         for i in tqdm(self.ds.items):
-            i.plain_image.save(f'out/ep/{i.id:03}_0p.png')
-            i.enhance_image.save(f'out/ep/{i.id:03}_1e.png')
-            i.image.save(f'out/ep/{i.id:03}_2ep.png')
+            if 'e' in self.args.image:
+                i.plain_image.save(f'{d}/{i.id:03}_0p.png')
+            if 'p' in self.args.image:
+                i.enhance_image.save(f'{d}/{i.id:03}_1e.png')
+            if 'ep' in self.args.image:
+                i.image.save(f'{d}/{i.id:03}_2ep.png')
 
     def run_mean_std(self):
         e_mean, e_std = calc_mean_and_std([item.enhance_image for item in self.ds.items])
