@@ -3,15 +3,17 @@ import os.path
 import re
 import shutil
 from glob import glob
+from collections import defaultdict
 
 from tqdm import tqdm
 import pandas as pd
-from endaaman.torch import Trainer
-
 from typing import NamedTuple, Callable
 from PIL import Image
 from PIL.Image import Image as img
 from torch.utils.data import Dataset
+import pydicom
+
+from endaaman.torch import Trainer
 
 class C(Trainer):
     def run_pre(self):
@@ -53,3 +55,31 @@ class C(Trainer):
             basename = os.path.basename(f)
 
         print(f'wrote {p}')
+
+    def run_convert_dicom(self):
+        base_dir = 'tmp/dicom'
+        dest_dir = 'out/from_dicom'
+
+        pattern = os.path.join(base_dir, '*/*')
+        paths = glob(pattern, recursive=True)
+        data = defaultdict(list)
+
+        for p in paths:
+            # path is like
+            # data/dicom/001/jMAC.1.2.392.<SNIP>5.2.602
+            m = re.match(f'^{base_dir}' + r'/([0-9]{3}).*/.*$', p)
+            if not m:
+                print('not match: ', p)
+                continue
+
+            data[m[1]].append(p)
+
+        for (id, paths) in tqdm(data.items()):
+            for i, p in enumerate(paths):
+                dcm = pydicom.read_file(p)
+                # BGR -> RGB
+                img = Image.fromarray(dcm.pixel_array[:, :, [2, 1, 0]])
+                img.save(os.path.join(dest_dir, f'{id}_{i}.png'))
+
+c = C()
+c.run()
