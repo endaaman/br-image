@@ -27,50 +27,6 @@ class Item(NamedTuple):
     id: int
     diagnosis: bool
     image: img
-    original_image: img
-    plain_image: img
-    enhance_image: img
-
-class ROI(NamedTuple):
-    x: int
-    y: int
-    w: int
-    h: int
-    def rect(self):
-        return (self.x, self.y, self.x + self.w, self.y + self.h)
-
-class ROIRule(NamedTuple):
-    enhance_roi: ROI
-    plain_roi: ROI
-
-roi_rules = {
-    # VERTICAL
-    'ver_C': ROIRule( # (1280, 960)
-        ROI(345, 169, 591, 293), # [1] h:169
-        ROI(345, 588, 591, 293),
-    ),
-
-    # HORIZONTAL
-    'hor_A': ROIRule( # (960, 720)
-        ROI(62, 87, 417, 495),
-        ROI(479, 87, 417, 495),
-    ),
-
-    'hor_B': ROIRule( # (1280, 720)
-        ROI(18, 102, 554, 435),
-        ROI(605, 102, 554, 435),
-    ),
-
-    'hor_C': ROIRule( # (1280, 960)
-        ROI(116, 144, 520, 658),
-        ROI(640, 144, 520, 658),
-    ),
-
-    'hor_X': ROIRule( # (1552, 873)
-        ROI(74, 109, 650, 570),
-        ROI(724, 109, 650, 570),
-    ),
-}
 
 E_MEAN = 0.1820
 E_STD  = 0.1372
@@ -92,9 +48,11 @@ class MaximumSquareCrop(ImageOnlyTransform):
 SCALE = 1
 
 class USDataset(Dataset):
-    def __init__(self, target='all', size=256, normalize=True):
+    def __init__(self, target='all', size=256, normalize=True, seed=42, test_ratio=0.3):
         self.target = target
         self.size = size
+        self.seed = seed
+        self.test_ratio = test_ratio
 
         train_augs = [
             A.RandomResizedCrop(width=size, height=size, scale=[0.7, 1.0]),
@@ -136,36 +94,32 @@ class USDataset(Dataset):
         self.load_data()
 
     def load_data(self):
-        df = pd.read_csv('data/cache/labels.csv', index_col=0)
-        if self.target == 'test':
-            df = df[df['test'] == 1]
-        elif self.target == 'train':
-            df = df[df['test'] == 0]
+        df_all = pd.read_csv('data/master.csv')
+
+
+        if self.target == 'all':
+            df = df_all
+        else:
+            df_train, df_test = train_test_split(
+                df_all,
+                test_size=self.test_ratio,
+                stratify=df_all.diagnosis,
+                random_state=self.seed)
+
+            if self.target == 'test':
+                df = df_test
+            elif self.target == 'train':
+                df = df_train
+            else:
+                raise ValueError('Invalid target', self.target)
 
         self.df = df
         self.items = []
         for idx, row in self.df.iterrows():
-            p = f'data/images/{idx:03}.png'
-            original_image = Image.open(p)
-            rule = roi_rules.get(row['image_type'], None)
-            if not rule:
-                raise ValueError(f'{p} is unknown image type.')
-
-            plain_image = original_image.crop(rule.enhance_roi.rect()).convert('L')
-            enhance_image = original_image.crop(rule.plain_roi.rect()).convert('L')
-            assert enhance_image.size == plain_image.size
-            base_size = plain_image.size
-            if row['swap']:
-                enhance_image, plain_image = plain_image, enhance_image
-            e = np.array(enhance_image.resize(base_size))
-            p = np.array(plain_image.resize(base_size))
-            # reverse dimension
-            dummy = np.zeros(base_size[::-1], dtype=np.uint8)
-            ep = np.stack([e, p, dummy], 0).transpose((1, 2, 0))
-            ep = Image.fromarray(ep)
-
-            self.items.append(Item(idx, row['diagnosis'],
-                                   ep, original_image, enhance_image, plain_image))
+            img = Image.open(f'data/images/{idx:03}.png')
+            self.items.append(Item(id=idx,
+                                   diagnosis=row['diagnosis'],
+                                   image=img))
 
     def __len__(self):
         return len(self.items) * SCALE
@@ -177,25 +131,6 @@ class USDataset(Dataset):
 
 
 class C(Commander):
-    def arg_split(self, parser):
-        parser.add_argument('--ratio', '-r', type=float, default=0.3)
-
-    def run_split(self):
-        # cache label data
-        df = pd.read_excel('data/master.xlsx', index_col=0).dropna()
-        df_train, df_test = train_test_split(df, test_size=self.args.ratio, stratify=df.diagnosis)
-        df['test'] = 0
-        df.at[df_test.index, 'test'] = 1
-        os.makedirs('data/cache', exist_ok=True)
-        p = 'data/cache/labels.csv'
-        df.to_csv(p)
-
-        # cache images
-        for f in glob('data/images/*.png'):
-            basename = os.path.basename(f)
-
-        print(f'wrote {p}')
-
     def arg_common(self, parser):
         parser.add_argument('--target', '-t', default='all', choices=['all', 'train', 'test'])
         parser.add_argument('--flip', action='store_true')
@@ -207,30 +142,6 @@ class C(Commander):
             target=self.args.target,
             normalize=self.args.function != 'samples',
         )
-
-    def arg_dump_ep(self, parser):
-        parser.add_argument('--dest', '-d', type=str, default='out/ep')
-        parser.add_argument('--image', '-i', nargs='+', choices=['e', 'p', 'ep'], default=['e', 'p', 'ep'])
-
-    def run_dump_ep(self):
-        d = self.args.dest
-        os.makedirs(d, exist_ok=True)
-        for i in tqdm(self.ds.items):
-            if 'e' in self.args.image:
-                i.plain_image.save(f'{d}/{i.id:03}_0p.png')
-            if 'p' in self.args.image:
-                i.enhance_image.save(f'{d}/{i.id:03}_1e.png')
-            if 'ep' in self.args.image:
-                i.image.save(f'{d}/{i.id:03}_2ep.png')
-
-    def run_mean_std(self):
-        e_mean, e_std = calc_mean_and_std([item.enhance_image for item in self.ds.items])
-        print('e_mean', e_mean)
-        print('e_std', e_std)
-
-        p_mean, p_std = calc_mean_and_std([item.plain_image for item in self.ds.items])
-        print('p_mean', p_mean)
-        print('p_std', p_std)
 
     def run_samples(self):
         t = self.args.target
@@ -258,5 +169,5 @@ if __name__ == '__main__':
     #     print(x.shape)
     #     print(y)
     #     break
-    c = C(options={'no_pre_common': ['split']})
+    c = C()
     c.run()
