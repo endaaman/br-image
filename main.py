@@ -71,6 +71,7 @@ class C(Trainer):
             eval_fn, {
                 'acc': binary_acc_fn,
             }, {
+                'acc': binary_acc_fn,
                 'auc': binary_auc_fn,
             })
 

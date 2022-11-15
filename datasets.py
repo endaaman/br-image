@@ -23,6 +23,8 @@ from albumentations.core.transforms_interface import ImageOnlyTransform
 from albumentations.augmentations.crops.functional import center_crop
 
 
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 class Item(NamedTuple):
     id: int
     diagnosis: bool
@@ -94,8 +96,7 @@ class USDataset(Dataset):
         self.load_data()
 
     def load_data(self):
-        df_all = pd.read_csv('data/master.csv')
-
+        df_all = pd.read_excel('data/master.xlsx', index_col=0)
 
         if self.target == 'all':
             df = df_all
@@ -116,7 +117,7 @@ class USDataset(Dataset):
         self.df = df
         self.items = []
         for idx, row in self.df.iterrows():
-            img = Image.open(f'data/images/{idx:03}.png')
+            img = Image.open(f'data/images/{idx}.png')
             self.items.append(Item(id=idx,
                                    diagnosis=row['diagnosis'],
                                    image=img))

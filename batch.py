@@ -82,38 +82,13 @@ def get_default_style_by_image(img):
     elif img.size == (1280, 960):
         t = 'C_ver'
     elif img.size == (1552, 873):
-        t = 'X_hor'
+        t = 'D_hor'
     else:
         t = 'unknown'
     return t
 
 
 class C(Commander):
-    def run_pre(self):
-        ll = sorted(glob('data/contrastUS/*/*.png'))
-        for s in tqdm(ll):
-            i = os.path.dirname(s).split('/')[-1]
-            shutil.copyfile(s, f'data/images/{i}.png')
-
-    def arg_split(self, parser):
-        parser.add_argument('--ratio', '-r', type=float, default=0.3)
-
-    def run_split(self):
-        # cache label data
-        df = pd.read_excel('data/master.xlsx', index_col=0).dropna()
-        df_train, df_test = train_test_split(df, test_size=self.args.ratio, stratify=df.diagnosis)
-        df['test'] = 0
-        df.at[df_test.index, 'test'] = 1
-        os.makedirs('data/cache', exist_ok=True)
-        p = 'data/cache/labels.csv'
-        df.to_csv(p)
-
-        # cache images
-        for f in glob('data/images/*.png'):
-            basename = os.path.basename(f)
-
-        print(f'wrote {p}')
-
     def arg_convert_dicom(self, parser):
         parser.add_argument('--src', default='data/dicom')
         parser.add_argument('--dest', default='out/from_dicom')
@@ -187,7 +162,7 @@ class C(Commander):
     def arg_cache(self, parser):
         parser.add_argument('--src', default='data/images/')
         parser.add_argument('--dest', default='data/cache/')
-        parser.add_argument('--target', '-t', nargs='+', default=[], type=str)
+        parser.add_argument('--target', '-t', type=str, nargs='+', default=[])
         parser.add_argument('--swap', action='store_true')
 
     def run_cache(self):
@@ -221,7 +196,6 @@ class C(Commander):
             # plain_image.save(dest('p'))
             # enhance_image.save(dest('e'))
             pe.save(dest('pe'))
-
 
 
 c = C()
