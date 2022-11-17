@@ -9,11 +9,10 @@ from tqdm import tqdm
 import pandas as pd
 from PIL import Image
 from sklearn import metrics
+from endaaman.torch import Trainer
 
 from models import create_model
 from datasets import USDataset
-
-from endaaman.torch import Trainer
 
 def binary_acc_fn(outputs, labels):
     y_true = labels.cpu().flatten().detach().numpy() > 0.5
@@ -33,18 +32,22 @@ available_models = \
 
 class C(Trainer):
     def arg_common(self, parser):
-        parser.add_argument('--model', '-m', choices=available_models, default=available_models[0])
+        parser.add_argument('--model', '-m', choices=available_models, default='eff_b0')
 
     def arg_train(self, parser):
         parser.add_argument('--norm', choices=['l1', 'l2'])
         parser.add_argument('--alpha', type=float, default=0.01)
+        parser.add_argument('--size', type=int)
 
     def run_train(self):
+        model, size = create_model(self.args.model)
+        model.to(self.device)
+
         train_loader, test_loader = [self.as_loader(USDataset(
+            size=self.args.size or size,
             target=t,
         )) for t in ['train', 'test']]
 
-        model = create_model(self.args.model).to(self.device)
         criterion = nn.BCELoss()
 
         def eval_fn(inputs, labels):

@@ -13,8 +13,8 @@ import numpy as np
 from tqdm import tqdm
 import pandas as pd
 import torchvision.transforms.functional as F
-from PIL import Image, ImageOps
-from PIL.Image import Image as img
+from PIL import Image, ImageOps, ImageFile
+from PIL.Image import Image as ImageType
 from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 import albumentations as A
@@ -28,7 +28,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 class Item(NamedTuple):
     id: int
     diagnosis: bool
-    image: img
+    image: ImageType
 
 E_MEAN = 0.1820
 E_STD  = 0.1372
@@ -58,7 +58,7 @@ class USDataset(Dataset):
 
         train_augs = [
             A.RandomResizedCrop(width=size, height=size, scale=[0.7, 1.0]),
-            A.Resize(size, size),
+            # A.Resize(size, size),
             A.HorizontalFlip(p=0.5),
             A.GaussNoise(p=0.2),
             A.OneOf([
@@ -66,6 +66,7 @@ class USDataset(Dataset):
                 A.MedianBlur(blur_limit=3, p=0.1),
                 A.Blur(blur_limit=3, p=0.1),
             ], p=0.2),
+
             A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=5, p=0.5),
             A.OneOf([
                 A.CLAHE(clip_limit=2),
@@ -117,7 +118,7 @@ class USDataset(Dataset):
         self.df = df
         self.items = []
         for idx, row in self.df.iterrows():
-            img = Image.open(f'data/images/{idx}.png')
+            img = Image.open(f'data/pe/{idx}_pe.png')
             self.items.append(Item(id=idx,
                                    diagnosis=row['diagnosis'],
                                    image=img))
@@ -134,13 +135,15 @@ class USDataset(Dataset):
 class C(Commander):
     def arg_common(self, parser):
         parser.add_argument('--target', '-t', default='all', choices=['all', 'train', 'test'])
-        parser.add_argument('--flip', action='store_true')
-        parser.add_argument('--rotate', type=int, default=10)
-        parser.add_argument('--shrink', type=float, default=0.3)
+        parser.add_argument('--size', '-s', type=int, default=256)
+        parser.add_argument('--a-flip', action='store_true')
+        parser.add_argument('--a-rotate', type=int, default=10)
+        parser.add_argument('--a-shrink', type=float, default=0.3)
 
     def pre_common(self):
         self.ds = USDataset(
             target=self.args.target,
+            size=self.args.size,
             normalize=self.args.function != 'samples',
         )
 
@@ -148,7 +151,7 @@ class C(Commander):
         t = self.args.target
         d = f'tmp/samples_{t}'
         os.makedirs(d, exist_ok=True)
-        for i, (x, y) in enumerate(self.ds):
+        for i, (x, y) in tqdm(enumerate(self.ds), total=len(self.ds)):
             if i > len(self.ds):
                 break
             self.x = x

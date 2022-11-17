@@ -5,14 +5,15 @@ from torch import nn
 from torchvision import transforms, models
 
 class EffNet(nn.Module):
-    def __init__(self, name='b0', num_classes=1):
+    def __init__(self, depth=0, num_classes=1):
         super().__init__()
         self.num_classes = num_classes
-        self.m = timm.create_model(f'tf_efficientnetv2_{name}', pretrained=True)
-        self.m.classifier = nn.Linear(1280, num_classes)
+        self.base = timm.create_model(f'tf_efficientnetv2_b{depth}', pretrained=True)
+        c = self.base.classifier.in_features
+        self.base.classifier = nn.Linear(c, num_classes)
 
     def forward(self, x):
-        x =  self.m(x)
+        x =  self.base(x)
         if self.num_classes > 1:
             x = torch.softmax(x, dim=1)
         else:
@@ -58,17 +59,17 @@ class VGG(nn.Module):
 
 def create_model(name):
     if re.match(r'^vgg', name):
-        return VGG(name=name)
+        return VGG(name=name), 256
 
-    m = re.match(r'^eff_(b[0-4])$', name)
+    m = re.match(r'^eff_b([0-4])$', name)
     if m:
-        return EffNet(name=m[1])
+        return EffNet(depth=m[1]), 512
 
     raise ValueError(f'Invalid name: {name}')
 
 if __name__ == '__main__':
     # m = EffNet('b0')
-    m = create_model('vgg16_bn')
+    model, _ = create_model('vgg16_bn')
     x = torch.rand([3, 3, 256, 256])
-    y = m(x)
+    y = model(x)
     print(y)
