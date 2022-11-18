@@ -21,6 +21,19 @@ available_models = \
     [f'vgg{i}' for i in [11, 13, 16, 19]] + \
     [f'vgg{i}_bn' for i in [11, 13, 16, 19]]
 
+
+class FocalBCELoss(nn.Module):
+    def __init__(self, gamma):
+        super().__init__()
+        self.gamma = gamma
+        self.bceloss = nn.BCELoss(reduction='none')
+
+    def forward(self, outputs, targets):
+        bce = self.bceloss(outputs, targets)
+        bce_exp = torch.exp(-bce)
+        focal_loss = (1-bce_exp)**self.gamma * bce
+        return focal_loss.mean()
+
 class C(Trainer):
     def arg_common(self, parser):
         parser.add_argument('--model', '-m', choices=available_models, default='eff_b0')
@@ -38,10 +51,10 @@ class C(Trainer):
         train_loader, test_loader = [self.as_loader(USDataset(
             size=self.args.size or size,
             target=t,
-            len_scale=0.02 if self.args.short else 1,
+            len_scale=0.02 if self.args.short else 2,
         )) for t in ['train', 'test']]
 
-        criterion = nn.BCELoss()
+        criterion = FocalBCELoss(gamma=4.0)
         def scheduler_fn(optimizer):
             return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 0.99 ** x)
 
@@ -56,21 +69,22 @@ class C(Trainer):
             train_loader=train_loader,
             val_loader=test_loader,
             eval_fn=eval_fn,
-            scheduler_fn=scheduler_fn,
+            # scheduler_fn=scheduler_fn,
+            scheduler_fn=None,
             batch_metrics={
                 'acc': BinaryAccuracy(),
                 'recall': BinaryRecall(),
                 'spec': BinarySpecificity()
             },
             epoch_metrics={
-                # 'auc': BinaryAUC(),
+                'auc': BinaryAUC(),
             },
         )
 
 if __name__ == '__main__':
     c = C({
-        'epoch': 50,
-        'lr': 0.001,
-        'batch_size': 128,
+        'epoch': 100,
+        'lr': 0.0001,
+        'batch_size': 64,
     })
     c.run()

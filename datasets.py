@@ -22,7 +22,6 @@ from albumentations.pytorch.transforms import ToTensorV2
 from albumentations.core.transforms_interface import ImageOnlyTransform
 from albumentations.augmentations.crops.functional import center_crop
 
-
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class Item(NamedTuple):
@@ -56,7 +55,7 @@ class USDataset(Dataset):
         self.len_scale = len_scale
 
         train_augs = [
-            A.RandomResizedCrop(width=size, height=size, scale=[0.7, 1.0]),
+            A.RandomResizedCrop(width=size, height=size, scale=[0.9, 1.0]),
             # A.Resize(size, size),
             A.HorizontalFlip(p=0.5),
             A.GaussNoise(p=0.2),
@@ -72,7 +71,7 @@ class USDataset(Dataset):
                 A.Emboss(),
                 A.RandomBrightnessContrast(),
             ], p=0.3),
-            # A.HueSaturationValue(p=0.3),
+            A.HueSaturationValue(p=0.3),
         ]
 
         test_augs = [
