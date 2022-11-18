@@ -47,14 +47,13 @@ class MaximumSquareCrop(ImageOnlyTransform):
         return center_crop(img, side, side)
 
 
-SCALE = 1
-
 class USDataset(Dataset):
-    def __init__(self, target='all', size=256, normalize=True, seed=42, test_ratio=0.3):
+    def __init__(self, target='all', size=256, normalize=True, seed=42, test_ratio=0.3, len_scale=1):
         self.target = target
         self.size = size
         self.seed = seed
         self.test_ratio = test_ratio
+        self.len_scale = len_scale
 
         train_augs = [
             A.RandomResizedCrop(width=size, height=size, scale=[0.7, 1.0]),
@@ -124,7 +123,7 @@ class USDataset(Dataset):
                                    image=img))
 
     def __len__(self):
-        return len(self.items) * SCALE
+        return int(len(self.items) * self.len_scale)
 
     def __getitem__(self, idx):
         item = self.items[idx % len(self.items)]
