@@ -5,6 +5,7 @@ from glob import glob
 import numpy as np
 import torch
 from torch import nn
+from torch import optim
 from tqdm import tqdm
 import pandas as pd
 from PIL import Image
@@ -42,6 +43,7 @@ class C(Trainer):
     def run_train(self):
         model, size = create_model(self.args.model)
         model.to(self.device)
+        self.prepare(model)
 
         train_loader, test_loader = [self.as_loader(USDataset(
             size=self.args.size or size,
@@ -49,34 +51,26 @@ class C(Trainer):
         )) for t in ['train', 'test']]
 
         criterion = nn.BCELoss()
+        self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda x: 0.99 ** x)
 
         def eval_fn(inputs, labels):
             outputs = model(inputs.to(self.device))
             loss = criterion(outputs, labels.to(self.device))
-
-            if self.args.norm in ['l1', 'l2']:
-                l = torch.tensor(0., requires_grad=True)
-                if self.args.norm == 'l1':
-                    for w in model.parameters():
-                        l = l + torch.norm(w, 1)
-                elif self.args.norm == 'l2':
-                    for w in model.parameters():
-                        l = l + torch.norm(w)**2
-                loss += l * self.args.alpha
-
             return loss, outputs
 
         self.train_model(
-            self.args.model,
-            model,
-            train_loader,
-            test_loader,
-            eval_fn, {
+            name=self.args.model,
+            train_loader=train_loader,
+            val_loader=test_loader,
+            eval_fn=eval_fn,
+            batch_metrics={
                 'acc': binary_acc_fn,
-            }, {
-                'acc': binary_acc_fn,
-                'auc': binary_auc_fn,
-            })
+            },
+            epoch_metrics={
+                # 'auc': binary_auc_fn,
+            },
+            short=True,
+        )
 
 if __name__ == '__main__':
     c = C({
