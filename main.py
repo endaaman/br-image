@@ -85,6 +85,6 @@ if __name__ == '__main__':
     c = C({
         'epoch': 100,
         'lr': 0.0001,
-        'batch_size': 64,
+        'batch_size': 16,
     })
     c.run()
