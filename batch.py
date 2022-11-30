@@ -139,8 +139,8 @@ class C(Commander):
         pd.DataFrame(data).to_csv(with_wrote('out/types.csv'), index=False)
 
 
-    def run_check_master(self):
-        df = pd.read_excel('data/master.xlsx', index_col=0)
+    def run_check_label(self):
+        df = pd.read_excel('data/label.xlsx', index_col=0)
 
         paths = sorted(glob('data/images/*.png'))
 
@@ -166,7 +166,7 @@ class C(Commander):
         parser.add_argument('--swap', action='store_true')
 
     def run_cache(self):
-        df = pd.read_excel('data/master.xlsx', index_col=0).dropna()
+        df = pd.read_excel('data/label.xlsx', index_col=0).dropna()
         os.makedirs(self.args.dest, exist_ok=True)
 
         if len(self.args.target) > 0:

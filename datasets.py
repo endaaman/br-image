@@ -95,7 +95,7 @@ class USDataset(Dataset):
         self.load_data()
 
     def load_data(self):
-        df_all = pd.read_excel('data/master.xlsx', index_col=0)
+        df_all = pd.read_excel('data/label.xlsx', index_col=0)
 
         if self.target == 'all':
             df = df_all
