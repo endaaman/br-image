@@ -48,7 +48,7 @@ class C(Trainer):
         model, size = create_model(self.args.model)
         model.to(self.device)
 
-        train_loader, test_loader = [self.as_loader(USDataset(
+        loaders = [self.as_loader(USDataset(
             size=self.args.size or size,
             target=t,
             len_scale=0.02 if self.args.short else 2,
@@ -66,8 +66,7 @@ class C(Trainer):
         self.train_model(
             name=self.args.model,
             model=model,
-            train_loader=train_loader,
-            val_loader=test_loader,
+            loaders=loaders,
             eval_fn=eval_fn,
             # scheduler_fn=scheduler_fn,
             scheduler_fn=None,
