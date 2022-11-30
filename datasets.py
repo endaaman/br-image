@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 from albumentations.core.transforms_interface import ImageOnlyTransform
-from albumentations.augmentations.crops.functional import center_crop
+from albumentations.augmentations.crops.functional import center_crop, random_crop
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -37,7 +37,7 @@ EP_MEAN = (E_MEAN + P_MEAN) / 2
 EP_STD = (E_STD + P_STD) / 2
 
 
-class MaximumSquareCrop(ImageOnlyTransform):
+class MaximumSquareCenterCrop(ImageOnlyTransform):
     def __init__(self, always_apply=False, p=1.0):
         super().__init__(always_apply, p)
 
@@ -45,18 +45,42 @@ class MaximumSquareCrop(ImageOnlyTransform):
         side = min(img.shape[:2])
         return center_crop(img, side, side)
 
+    def get_transform_init_args_names(self):
+        return ()
+
+class MaximumSquareRandomCrop(ImageOnlyTransform):
+    def __init__(self, always_apply=False, p=1.0):
+        super().__init__(always_apply, p)
+
+    def apply(self, img, **params):
+        side = min(img.shape[:2])
+        return random_crop(img, side, side, 0, 0)
+
+    def get_transform_init_args_names(self):
+        return ()
+
 
 class USDataset(Dataset):
-    def __init__(self, target='all', size=256, normalize=True, seed=42, test_ratio=0.3, len_scale=1):
+    def __init__(self, target='all', aug_mode='same', size=256, normalize=True, seed=42, test_ratio=0.3, len_scale=1):
         self.target = target
         self.size = size
         self.seed = seed
         self.test_ratio = test_ratio
         self.len_scale = len_scale
 
-        train_augs = [
-            A.RandomResizedCrop(width=size, height=size, scale=[0.9, 1.0]),
-            # A.Resize(size, size),
+        # margin = size//20
+        augs = {}
+        augs['train'] = [
+            # A.RandomResizedCrop(width=size, height=size, scale=[0.9, 1.0]),
+
+            # MaximumSquareRandomCrop(),
+            # A.Resize(size+margin*2, size+margin*2),
+            # A.RandomCrop(size, size),
+
+            MaximumSquareCenterCrop(),
+            # A.Resize(width=size, height=size),
+            A.RandomResizedCrop(width=size, height=size, scale=[0.9, 1.1]),
+
             A.HorizontalFlip(p=0.5),
             A.GaussNoise(p=0.2),
             A.OneOf([
@@ -74,10 +98,12 @@ class USDataset(Dataset):
             A.HueSaturationValue(p=0.3),
         ]
 
-        test_augs = [
-            MaximumSquareCrop(),
+        augs['test'] = [
+            MaximumSquareCenterCrop(),
             A.Resize(size, size),
         ]
+
+        augs['all'] = augs['test']
 
         if normalize:
             common_augs = [
@@ -87,11 +113,13 @@ class USDataset(Dataset):
         else:
             common_augs = [ToTensorV2()]
 
-        if target == 'test':
-            self.albu = A.Compose(test_augs + common_augs)
+        if aug_mode == 'same':
+            aug = augs[target]
         else:
-            self.albu = A.Compose(train_augs + common_augs)
+            aug = augs[aug_mode]
 
+
+        self.albu = A.Compose(aug + common_augs)
         self.load_data()
 
     def load_data(self):
@@ -133,6 +161,7 @@ class USDataset(Dataset):
 class C(Commander):
     def arg_common(self, parser):
         parser.add_argument('--target', '-t', default='all', choices=['all', 'train', 'test'])
+        parser.add_argument('--aug', '-a', default='same', choices=['same', 'train', 'test'])
         parser.add_argument('--size', '-s', type=int, default=256)
         parser.add_argument('--a-flip', action='store_true')
         parser.add_argument('--a-rotate', type=int, default=10)
@@ -141,21 +170,28 @@ class C(Commander):
     def pre_common(self):
         self.ds = USDataset(
             target=self.args.target,
+            aug_mode=self.args.aug,
             size=self.args.size,
             normalize=self.args.function != 'samples',
         )
 
+    def arg_samples(self, parser):
+        parser.add_argument('--length', '-l', type=int)
+        parser.add_argument('--dest', '-d')
+
     def run_samples(self):
         t = self.args.target
-        d = f'tmp/samples_{t}'
-        os.makedirs(d, exist_ok=True)
-        for i, (x, y) in tqdm(enumerate(self.ds), total=len(self.ds)):
-            if i > len(self.ds):
+        d = self.args.dest or t
+        dest = f'out/samples/{d}'
+        os.makedirs(dest, exist_ok=True)
+        total = self.args.length or len(self.ds)
+        for i, (x, y) in tqdm(enumerate(self.ds), total=total):
+            if i > total:
                 break
             self.x = x
             self.y = y
             img = tensor_to_pil(x)
-            img.save(f'{d}/{i}_{int(y)}.png')
+            img.save(f'{dest}/{i}_{int(y)}.png')
 
     def run_t(self):
         for (x, y) in self.ds:
