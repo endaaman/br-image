@@ -10,7 +10,7 @@ from tqdm import tqdm
 import pandas as pd
 from typing import NamedTuple, Callable
 from PIL import Image
-from PIL.Image import Image as img
+from PIL.Image import Image as ImageType
 from torch.utils.data import Dataset
 import pydicom
 
@@ -33,8 +33,16 @@ class ROIRule(NamedTuple):
 roi_rules = {
     # VERTICAL
     'C_ver': ROIRule( # (1280, 960)
-        ROI(345, 169, 591, 293), # [1] h:169
-        ROI(345, 588, 591, 293),
+        # ROI(345, 169, 591, 293), # [1] h:169
+        # ROI(345, 588, 591, 293),
+
+        ROI(345, 142, 590, 347),
+        ROI(345, 560, 590, 347),
+    ),
+
+    'C_ver2': ROIRule( # (1280, 960)
+        ROI(256, 140, 796, 344),
+        ROI(256, 560, 796, 344),
     ),
 
     # HORIZONTAL
@@ -109,12 +117,12 @@ class C(Commander):
 
             data[m[1]].append(p)
 
-        for (id, paths) in tqdm(data.items()):
+        for (id_, paths) in tqdm(data.items()):
             for i, p in enumerate(paths):
                 dcm = pydicom.read_file(p)
                 # BGR -> RGB
                 img = Image.fromarray(dcm.pixel_array[:, :, [2, 1, 0]])
-                img.save(os.path.join(self.args.dest, f'{id}_{i}.png'))
+                img.save(os.path.join(self.args.dest, f'{id_}_{i}.png'))
 
     def arg_detect_style(self, parser):
         parser.add_argument('--src', default='data/images')
@@ -127,12 +135,12 @@ class C(Commander):
             m = re.match(r'.*/((ba|a)?[0-9]{3})_0\.png', p)
             if not m:
                 raise ValueError('Invalid filename: ', p)
-            id = m[1]
-            print(id, p)
+            id_ = m[1]
+            print(id_, p)
             img = Image.open(p)
             t = get_default_style_by_image(img)
             data.append({
-                'id': id,
+                'id': id_,
                 'style': t,
             })
 
@@ -155,7 +163,7 @@ class C(Commander):
         for idx, row in df.iterrows():
             path = f'data/images/{idx}.png'
             if not os.path.exists(path):
-                print(f'{name} is not registered but {p} does not exist')
+                print(f'{name} is not registered but {path} does not exist')
 
         print('done')
 
@@ -164,6 +172,7 @@ class C(Commander):
         parser.add_argument('--dest', default='data/cache/')
         parser.add_argument('--target', '-t', type=str, nargs='+', default=[])
         parser.add_argument('--swap', action='store_true')
+        parser.add_argument('--range', type=int, nargs='+')
 
     def run_cache(self):
         df = pd.read_excel('data/label.xlsx', index_col=0).dropna()
@@ -172,7 +181,8 @@ class C(Commander):
         if len(self.args.target) > 0:
             df = df.loc[self.args.target]
 
-        for idx, row in tqdm(df.iterrows(), total=len(df)):
+        total = len(df)
+        for i, (idx, row) in (t:=tqdm(enumerate(df.iterrows()), total=total)):
             rule = roi_rules.get(f'{row.resolution}_{row.position}', None)
             if not rule:
                 raise ValueError(f'{p} is unknown image type.')
@@ -192,10 +202,15 @@ class C(Commander):
             pe = np.stack([p, e, dummy], 0).transpose((1, 2, 0))
             pe = Image.fromarray(pe)
 
-            dest = lambda code: os.path.join(self.args.dest, f'{idx}_{code}.png')
+            dest_fn = lambda code: os.path.join(self.args.dest, f'{idx}_{code}.png')
             # plain_image.save(dest('p'))
             # enhance_image.save(dest('e'))
-            pe.save(dest('pe'))
+
+            d = dest_fn('pe')
+            pe.save(d)
+
+            t.set_description(f'{d} {i}/{total}')
+            t.refresh()
 
 
 c = C()

@@ -90,12 +90,13 @@ class USDataset(Dataset):
             ], p=0.2),
 
             A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=5, p=0.5),
+
             A.OneOf([
                 A.CLAHE(clip_limit=2),
                 A.Emboss(),
                 A.RandomBrightnessContrast(),
             ], p=0.3),
-            A.HueSaturationValue(p=0.3),
+            # A.HueSaturationValue(p=0.3),
         ]
 
         augs['test'] = [
@@ -163,9 +164,9 @@ class C(Commander):
         parser.add_argument('--target', '-t', default='all', choices=['all', 'train', 'test'])
         parser.add_argument('--aug', '-a', default='same', choices=['same', 'train', 'test'])
         parser.add_argument('--size', '-s', type=int, default=256)
-        parser.add_argument('--a-flip', action='store_true')
-        parser.add_argument('--a-rotate', type=int, default=10)
-        parser.add_argument('--a-shrink', type=float, default=0.3)
+        # parser.add_argument('--a-flip', action='store_true')
+        # parser.add_argument('--a-rotate', type=int, default=10)
+        # parser.add_argument('--a-shrink', type=float, default=0.3)
 
     def pre_common(self):
         self.ds = USDataset(
