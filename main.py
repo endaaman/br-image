@@ -10,7 +10,7 @@ from tqdm import tqdm
 import pandas as pd
 from PIL import Image
 from sklearn import metrics
-from endaaman.torch import TrainCommander
+from endaaman.torch import TrainCommander, Trainer
 from endaaman.metrics import BinaryAccuracy, BinaryAUC, BinaryRecall, BinarySpecificity
 
 from models import create_model
@@ -34,6 +34,31 @@ class FocalBCELoss(nn.Module):
         focal_loss = (1-bce_exp)**self.gamma * bce
         return focal_loss.mean()
 
+class T(Trainer):
+    def prepare(self):
+        self.criterion = FocalBCELoss(gamma=4.0)
+
+    def get_scheduler(self, optimizer):
+        return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 0.99 ** x)
+
+    def eval(self, inputs, labels, device):
+        outputs = self.model(inputs.to(device))
+        loss = self.criterion(outputs, labels.to(device))
+        return loss, outputs
+
+    def get_batch_metrics(self):
+        return {
+            'acc': BinaryAccuracy(),
+            'recall': BinaryRecall(),
+            'spec': BinarySpecificity()
+        }
+
+    def get_epoch_metrics(self):
+        return {
+            'auc': BinaryAUC(),
+        }
+
+
 class CMD(TrainCommander):
     def arg_common(self, parser):
         parser.add_argument('--model', '-m', choices=available_models, default='eff_b0')
@@ -46,39 +71,20 @@ class CMD(TrainCommander):
 
     def run_train(self):
         model, size = create_model(self.args.model)
-        model.to(self.device)
 
         loaders = [self.as_loader(USDataset(
             size=self.args.size or size,
             target=t,
-            len_scale=0.02 if self.args.short else 2,
+            len_scale=0.02 if self.args.short else 1,
         )) for t in ['train', 'test']]
 
-        criterion = FocalBCELoss(gamma=4.0)
-        def scheduler_fn(optimizer):
-            return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 0.99 ** x)
-
-        def eval_fn(inputs, labels):
-            outputs = model(inputs.to(self.device))
-            loss = criterion(outputs, labels.to(self.device))
-            return loss, outputs
-
-        self.train_model(
+        trainer = T(
             name=self.args.model,
             model=model,
             loaders=loaders,
-            eval_fn=eval_fn,
-            # scheduler_fn=scheduler_fn,
-            scheduler_fn=None,
-            batch_metrics={
-                'acc': BinaryAccuracy(),
-                'recall': BinaryRecall(),
-                'spec': BinarySpecificity()
-            },
-            epoch_metrics={
-                'auc': BinaryAUC(),
-            },
         )
+
+        trainer.train(self.args.lr, self.args.epoch, device=self.device)
 
 if __name__ == '__main__':
     cmd = CMD({

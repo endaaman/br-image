@@ -4,11 +4,11 @@ import re
 import shutil
 from glob import glob
 from collections import defaultdict
+from typing import NamedTuple, Callable
 
 import numpy as np
 from tqdm import tqdm
 import pandas as pd
-from typing import NamedTuple, Callable
 from PIL import Image
 from PIL.Image import Image as ImageType
 from torch.utils.data import Dataset
@@ -106,6 +106,16 @@ def get_default_style_by_image(img):
     return t
 
 
+def pad2square(img, new_size=None):
+    M = max(img.size)
+    bg = Image.new(mode=img.mode, size=(M, M))
+    x = (M - img.width) // 2
+    y = (M - img.height) // 2
+    bg.paste(img, (x, y))
+    if new_size:
+        bg = bg.resize((new_size, new_size))
+    return bg
+
 class C(Commander):
     def arg_convert_dicom(self, parser):
         parser.add_argument('--src', default='data/dicom')
@@ -162,7 +172,6 @@ class C(Commander):
 
         paths = sorted(glob('data/images/*.png'))
 
-        data = []
         print('checking images')
         for p in paths:
             name = os.path.splitext(os.path.basename(p))[0]
@@ -170,7 +179,7 @@ class C(Commander):
                 print(f'{p} exists but {name} is not registered to df')
 
         print('checking df')
-        for idx, row in df.iterrows():
+        for idx, __row in df.iterrows():
             path = f'data/images/{idx}.png'
             if not os.path.exists(path):
                 print(f'{name} is not registered but {path} does not exist')
@@ -182,6 +191,7 @@ class C(Commander):
         parser.add_argument('--dest', default='data/cache/')
         parser.add_argument('--target', '-t', type=str, nargs='+', default=[])
         parser.add_argument('--swap', action='store_true')
+        parser.add_argument('--square', action='store_true')
         parser.add_argument('--from', type=int)
         parser.add_argument('--to', type=int)
 
@@ -220,6 +230,10 @@ class C(Commander):
             dummy = np.zeros(base_size[::-1], dtype=np.uint8)
             pe = np.stack([p, e, dummy], 0).transpose((1, 2, 0))
             pe = Image.fromarray(pe)
+
+            if self.args.square:
+                # e, p, pe = [pad2square(i, 720) for i in (e, p, ep) ]
+                pe = pad2square(pe, 720)
 
             dest_fn = lambda code: os.path.join(self.args.dest, f'{idx}_{code}.png')
             # plain_image.save(dest('p'))
