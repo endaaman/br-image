@@ -10,7 +10,7 @@ from tqdm import tqdm
 import pandas as pd
 from PIL import Image
 from sklearn import metrics
-from endaaman.torch import Trainer
+from endaaman.torch import TrainCommander
 from endaaman.metrics import BinaryAccuracy, BinaryAUC, BinaryRecall, BinarySpecificity
 
 from models import create_model
@@ -34,7 +34,7 @@ class FocalBCELoss(nn.Module):
         focal_loss = (1-bce_exp)**self.gamma * bce
         return focal_loss.mean()
 
-class C(Trainer):
+class CMD(TrainCommander):
     def arg_common(self, parser):
         parser.add_argument('--model', '-m', choices=available_models, default='eff_b0')
 
@@ -81,9 +81,9 @@ class C(Trainer):
         )
 
 if __name__ == '__main__':
-    c = C({
+    cmd = CMD({
         'epoch': 100,
         'lr': 0.0001,
         'batch_size': 16,
     })
-    c.run()
+    cmd.run()
