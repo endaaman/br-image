@@ -145,7 +145,7 @@ class USDataset(Dataset):
         self.df = df
         self.items = []
         for idx, row in self.df.iterrows():
-            img = Image.open(f'data/pe/{idx}_pe.png')
+            img = Image.open(f'data/pe/{idx}_pe.png').copy()
             self.items.append(Item(id=idx,
                                    diagnosis=row['diagnosis'],
                                    image=img))
