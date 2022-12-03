@@ -119,7 +119,6 @@ class USDataset(Dataset):
         else:
             aug = augs[aug_mode]
 
-
         self.albu = A.Compose(aug + common_augs)
         self.load_data()
 

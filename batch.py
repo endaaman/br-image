@@ -13,6 +13,7 @@ from PIL import Image
 from PIL.Image import Image as ImageType
 from torch.utils.data import Dataset
 import pydicom
+from gimpformats.gimpXcfDocument import GimpDocument
 
 from endaaman import Commander, with_wrote, with_log
 
@@ -245,6 +246,27 @@ class C(Commander):
             t.set_description(f'{d} {i}/{total}')
             t.refresh()
 
+
+    def arg_extract_mask(self, parser):
+        parser.add_argument('--src', '-s', required=True)
+        parser.add_argument('--dest', '-d', default='mask')
+        parser.add_argument('--from', type=int)
+        parser.add_argument('--to', type=int)
+
+    def run_extract_mask(self):
+        os.makedirs(self.args.dest, exist_ok=True)
+        for i, p in tqdm(enumerate(glob(os.path.join(self.args.src, '*.xcf')))):
+            _from = getattr(self.args, 'from')
+            if _from and i < _from:
+                continue
+            _to = getattr(self.args, 'to')
+            if _to and i < _to:
+                continue
+            name = os.path.splitext(os.path.basename(p))[0]
+            prj = GimpDocument(p)
+            d = os.path.join(self.args.dest, f'{name}.png')
+            # print(d)
+            prj.layers[0].image.save(d)
 
 c = C()
 c.run()

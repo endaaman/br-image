@@ -88,7 +88,7 @@ class CMD(TrainCommander):
 
 if __name__ == '__main__':
     cmd = CMD({
-        'epoch': 100,
+        'epoch': 50,
         'lr': 0.0001,
         'batch_size': 16,
     })
