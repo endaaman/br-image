@@ -73,6 +73,12 @@ roi_rules = {
         (560, 680),
     ),
 
+    'C_hor3': ROIRule( # (1280, 960)
+        (64, 141),
+        (704, 141),
+        (560, 680),
+    ),
+
     'D_hor': ROIRule( # (1552, 873)
         (74, 109),
         (724, 109),
@@ -120,12 +126,12 @@ def pad2square(img, new_size=None):
 class C(Commander):
     def arg_convert_dicom(self, parser):
         parser.add_argument('--src', default='data/dicom')
-        parser.add_argument('--dest', default='out/from_dicom')
+        parser.add_argument('--dest', default='data/images')
 
     def run_convert_dicom(self):
         os.makedirs(self.args.dest, exist_ok=True)
         pattern = os.path.join(self.args.src, '*/*')
-        paths = glob(pattern, recursive=True)
+        paths = sorted(glob(pattern, recursive=True))
         data = defaultdict(list)
 
         for p in paths:
@@ -193,8 +199,7 @@ class C(Commander):
         parser.add_argument('--target', '-t', type=str, nargs='+', default=[])
         parser.add_argument('--swap', action='store_true')
         parser.add_argument('--square', action='store_true')
-        parser.add_argument('--from', type=int)
-        parser.add_argument('--to', type=int)
+        parser.add_argument('--id', type=str)
 
     def run_cache(self):
         df = pd.read_excel('data/label.xlsx', index_col=0).dropna()
@@ -205,12 +210,7 @@ class C(Commander):
 
         total = len(df)
         for i, (idx, row) in (t:=tqdm(enumerate(df.iterrows()), total=total)):
-            ii = int(re.match(r'.*(\d\d\d)_\d$', idx)[1])
-            _from = getattr(self.args, 'from')
-            if _from and ii < _from:
-                continue
-            _to = getattr(self.args, 'to')
-            if _to and ii > _to:
+            if self.args.id and self.args.id != idx:
                 continue
             rule_code = f'{row.resolution}_{row.position}'
             rule = roi_rules.get(rule_code, None)
@@ -225,25 +225,32 @@ class C(Commander):
             base_size = plain_image.size
             if row['swap'] ^ self.args.swap:
                 enhance_image, plain_image = plain_image, enhance_image
-            e = np.array(enhance_image)
-            p = np.array(plain_image)
-            # reverse dimension
-            dummy = np.zeros(base_size[::-1], dtype=np.uint8)
-            pe = np.stack([p, e, dummy], 0).transpose((1, 2, 0))
-            pe = Image.fromarray(pe)
 
-            if self.args.square:
-                # e, p, pe = [pad2square(i, 720) for i in (e, p, ep) ]
-                pe = pad2square(pe, 720)
+            e_arr = np.array(enhance_image)
+            p_arr = np.array(plain_image)
+            d_arr = np.zeros(p_arr.shape, dtype=np.uint8)
 
-            dest_fn = lambda code: os.path.join(self.args.dest, f'{idx}_{code}.png')
-            # plain_image.save(dest('p'))
-            # enhance_image.save(dest('e'))
+            mask_path = f'data/mask/{idx}.png'
+            if os.path.isfile(mask_path):
+                mask_image_base = Image.open(mask_path)
+                dummy = np.zeros(base_size[::-1], dtype=np.uint8)
+                mask_image = mask_image_base.crop(rule.p_rect()).convert('L')
+                m_arr = np.array(mask_image)
+            else:
+                m_arr = d_arr
 
-            d = dest_fn('pe')
-            pe.save(d)
+            # RGB -> GBR
+            pem = Image.fromarray(np.stack([p_arr, e_arr, m_arr], 0).transpose((1, 2, 0)))
+            pe =  Image.fromarray(np.stack([p_arr, e_arr, d_arr], 0).transpose((1, 2, 0)))
+            m =   Image.fromarray(m_arr, mode='L')
 
-            t.set_description(f'{d} {i}/{total}')
+            for (img, name) in ((pem, 'pem'), (pe, 'pe'), (m, 'm')):
+                img = pad2square(img, 720)
+                d = os.path.join(self.args.dest, name)
+                os.makedirs(d, exist_ok=True)
+                img.save(os.path.join(d, f'{idx}_{name}.png'))
+
+            t.set_description(f'{idx} {i}/{total}')
             t.refresh()
 
 
@@ -255,14 +262,24 @@ class C(Commander):
 
     def run_extract_mask(self):
         os.makedirs(self.args.dest, exist_ok=True)
+
+        df = pd.read_excel('data/label.xlsx', index_col=0).dropna()
+
+        total = len(df)
+        # for i, (idx, row) in (t:=tqdm(enumerate(df.iterrows()), total=total)):
         for i, p in tqdm(enumerate(glob(os.path.join(self.args.src, '*.xcf')))):
             _from = getattr(self.args, 'from')
             if _from and i < _from:
                 continue
             _to = getattr(self.args, 'to')
-            if _to and i < _to:
+            if _to and i > _to:
                 continue
             name = os.path.splitext(os.path.basename(p))[0]
+
+            if not df.loc[name].mask:
+                print('skip', name)
+                continue
+
             prj = GimpDocument(p)
             d = os.path.join(self.args.dest, f'{name}.png')
             # print(d)
