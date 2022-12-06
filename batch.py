@@ -234,7 +234,8 @@ class C(Commander):
             if os.path.isfile(mask_path):
                 mask_image_base = Image.open(mask_path)
                 dummy = np.zeros(base_size[::-1], dtype=np.uint8)
-                mask_image = mask_image_base.crop(rule.p_rect()).convert('L')
+                rect = rule.e_rect() if row['swap'] else rule.p_rect()
+                mask_image = mask_image_base.crop(rect).convert('L')
                 m_arr = np.array(mask_image)
             else:
                 m_arr = d_arr
@@ -256,33 +257,22 @@ class C(Commander):
 
     def arg_extract_mask(self, parser):
         parser.add_argument('--src', '-s', required=True)
-        parser.add_argument('--dest', '-d', default='mask')
-        parser.add_argument('--from', type=int)
-        parser.add_argument('--to', type=int)
+        parser.add_argument('--dest', '-d', default='tmp/mask')
 
     def run_extract_mask(self):
+        if os.path.isdir(self.args.src):
+            paths = sorted(glob(os.path.join(self.args.src, '*.xcf')))
+        elif os.path.isfile(self.args.src):
+            paths = [self.args.src]
+        else:
+            raise RuntimeError(f'Invalid src: {self.args.src}')
+
         os.makedirs(self.args.dest, exist_ok=True)
 
-        df = pd.read_excel('data/label.xlsx', index_col=0).dropna()
-
-        total = len(df)
-        # for i, (idx, row) in (t:=tqdm(enumerate(df.iterrows()), total=total)):
-        for i, p in tqdm(enumerate(glob(os.path.join(self.args.src, '*.xcf')))):
-            _from = getattr(self.args, 'from')
-            if _from and i < _from:
-                continue
-            _to = getattr(self.args, 'to')
-            if _to and i > _to:
-                continue
+        for p in tqdm(paths):
             name = os.path.splitext(os.path.basename(p))[0]
-
-            if not df.loc[name].mask:
-                print('skip', name)
-                continue
-
             prj = GimpDocument(p)
             d = os.path.join(self.args.dest, f'{name}.png')
-            # print(d)
             prj.layers[0].image.save(d)
 
 c = C()

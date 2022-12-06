@@ -10,16 +10,12 @@ from tqdm import tqdm
 import pandas as pd
 from PIL import Image
 from sklearn import metrics
-from endaaman.torch import TrainCommander, Trainer
+from endaaman.torch import TrainCommander
+from endaaman.trainer import Trainer
 from endaaman.metrics import BinaryAccuracy, BinaryAUC, BinaryRecall, BinarySpecificity
 
-from models import create_model
+from models import create_model, available_models
 from datasets import USDataset
-
-available_models = \
-    [f'eff_b{i}' for i in range(6)] + \
-    [f'vgg{i}' for i in [11, 13, 16, 19]] + \
-    [f'vgg{i}_bn' for i in [11, 13, 16, 19]]
 
 
 class FocalBCELoss(nn.Module):
@@ -41,21 +37,21 @@ class T(Trainer):
     def get_scheduler(self, optimizer):
         return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 0.99 ** x)
 
-    def eval(self, inputs, labels, device):
-        outputs = self.model(inputs.to(device))
-        loss = self.criterion(outputs, labels.to(device))
+    def eval(self, inputs, labels):
+        outputs = self.model(inputs.to(self.device))
+        loss = self.criterion(outputs, labels.to(self.device))
         return loss, outputs
 
-    def get_batch_metrics(self):
+    def get_metrics(self):
         return {
-            'acc': BinaryAccuracy(),
-            'recall': BinaryRecall(),
-            'spec': BinarySpecificity()
-        }
-
-    def get_epoch_metrics(self):
-        return {
-            'auc': BinaryAUC(),
+            'batch': {
+                'acc': BinaryAccuracy(),
+                'recall': BinaryRecall(),
+                'spec': BinarySpecificity()
+            },
+            'epoch': {
+                'auc': BinaryAUC(),
+            },
         }
 
 
@@ -63,17 +59,15 @@ class CMD(TrainCommander):
     def arg_common(self, parser):
         parser.add_argument('--model', '-m', choices=available_models, default='eff_b0')
 
-    def arg_train(self, parser):
-        parser.add_argument('--norm', choices=['l1', 'l2'])
-        parser.add_argument('--alpha', type=float, default=0.01)
-        parser.add_argument('--size', type=int)
+    def arg_start(self, parser):
+        parser.add_argument('--size', type=int, default=512)
         parser.add_argument('--short', action='store_true')
 
-    def run_train(self):
-        model, size = create_model(self.args.model)
+    def run_start(self):
+        model = create_model(self.args.model, 1)
 
         loaders = [self.as_loader(USDataset(
-            size=self.args.size or size,
+            size=self.args.size,
             target=t,
             len_scale=0.02 if self.args.short else 1,
         )) for t in ['train', 'test']]
@@ -82,9 +76,13 @@ class CMD(TrainCommander):
             name=self.args.model,
             model=model,
             loaders=loaders,
+            device=self.device,
+            save_period=self.args.save_period,
+            suffix=self.args.suffix,
         )
 
-        trainer.train(self.args.lr, self.args.epoch, device=self.device)
+        trainer.start(self.args.epoch, lr=self.args.lr)
+
 
 if __name__ == '__main__':
     cmd = CMD({
