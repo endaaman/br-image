@@ -2,14 +2,15 @@ import os
 import re
 from glob import glob
 
-import numpy as np
-import torch
-from torch import nn
-from torch import optim
 from tqdm import tqdm
 import pandas as pd
 from PIL import Image
 from sklearn import metrics
+import numpy as np
+import torch
+from torch import nn
+from torch import optim
+from timm.scheduler.cosine_lr import CosineLRScheduler
 from endaaman.torch import TrainCommander
 from endaaman.trainer import Trainer
 from endaaman.metrics import BinaryAccuracy, BinaryAUC, BinaryRecall, BinarySpecificity
@@ -34,8 +35,16 @@ class T(Trainer):
     def prepare(self):
         self.criterion = FocalBCELoss(gamma=4.0)
 
-    def get_scheduler(self, optimizer):
-        return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 0.99 ** x)
+    def create_scheduler(self, lr):
+        return CosineLRScheduler(
+            self.optimizer, t_initial=80, lr_min=0.00001,
+            warmup_t=10, warmup_lr_init=0.00005, warmup_prefix=True)
+
+    def hook_load_state(self, checkpoint):
+        self.scheduler.step(checkpoint.epoch-1)
+
+    def step(self, train_loss):
+        self.scheduler.step(self.current_epoch)
 
     def eval(self, inputs, labels):
         outputs = self.model(inputs.to(self.device))
@@ -57,11 +66,12 @@ class T(Trainer):
 
 class CMD(TrainCommander):
     def arg_common(self, parser):
-        parser.add_argument('--model', '-m', choices=available_models, default='eff_b0')
+        parser.add_argument('--model', '-m', choices=available_models, default='eff_v2_b0')
 
     def arg_start(self, parser):
         parser.add_argument('--size', type=int, default=512)
         parser.add_argument('--short', action='store_true')
+        parser.add_argument('--model', default='pem')
 
     def run_start(self):
         model = create_model(self.args.model, 1)
@@ -69,6 +79,7 @@ class CMD(TrainCommander):
         loaders = [self.as_loader(USDataset(
             size=self.args.size,
             target=t,
+            mode=self.args.mode,
             len_scale=0.02 if self.args.short else 1,
         )) for t in ['train', 'test']]
 
@@ -86,7 +97,7 @@ class CMD(TrainCommander):
 
 if __name__ == '__main__':
     cmd = CMD({
-        'epoch': 50,
+        'epoch': 100,
         'lr': 0.0001,
         'batch_size': 16,
     })

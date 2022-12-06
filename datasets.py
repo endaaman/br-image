@@ -61,12 +61,15 @@ class MaximumSquareRandomCrop(ImageOnlyTransform):
 
 
 class USDataset(Dataset):
-    def __init__(self, target='all', aug_mode='same', size=256, normalize=True, seed=42, test_ratio=0.3, len_scale=1):
+    def __init__(self, target='all', aug_mode='same', mode='pem', size=512,
+                 normalize=True, test_ratio=0.3, len_scale=1, seed=42):
         self.target = target
         self.size = size
-        self.seed = seed
+        self.mode = mode
+
         self.test_ratio = test_ratio
         self.len_scale = len_scale
+        self.seed = seed
 
         # margin = size//20
         augs = {}
@@ -143,8 +146,9 @@ class USDataset(Dataset):
 
         self.df = df
         self.items = []
+
         for idx, row in self.df.iterrows():
-            img = Image.open(f'data/cache/pem/{idx}_pem.png').copy()
+            img = Image.open(f'data/cache/{self.mode}/{idx}_{self.mode}.png').copy()
             self.items.append(Item(id=idx,
                                    diagnosis=row['diagnosis'],
                                    image=img))
