@@ -37,7 +37,7 @@ class T(Trainer):
 
     def create_scheduler(self, lr):
         return CosineLRScheduler(
-            self.optimizer, t_initial=80, lr_min=0.00001,
+            self.optimizer, t_initial=100, lr_min=0.00001,
             warmup_t=10, warmup_lr_init=0.00005, warmup_prefix=True)
 
     def hook_load_state(self, checkpoint):
@@ -71,7 +71,7 @@ class CMD(TrainCommander):
     def arg_start(self, parser):
         parser.add_argument('--size', type=int, default=512)
         parser.add_argument('--short', action='store_true')
-        parser.add_argument('--model', default='pem')
+        parser.add_argument('--mode', default='pem')
 
     def run_start(self):
         model = create_model(self.args.model, 1)

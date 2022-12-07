@@ -28,6 +28,7 @@ class Item(NamedTuple):
     id: int
     diagnosis: bool
     image: ImageType
+    test: bool
 
 E_MEAN = 0.1820
 E_STD  = 0.1372
@@ -65,7 +66,7 @@ class MaximumSquareRandomCrop(ImageOnlyTransform):
 
 class USDataset(Dataset):
     def __init__(self, target='all', aug_mode='same', mode='pem', size=512,
-                 normalize=True, test_ratio=0.3, len_scale=1, seed=42):
+                 normalize=True, test_ratio=0.25, len_scale=1, seed=42):
         self.target = target
         self.size = size
         self.mode = mode
@@ -83,7 +84,7 @@ class USDataset(Dataset):
             # A.Resize(size+margin*2, size+margin*2),
             # A.RandomCrop(size, size),
 
-            MaximumSquareCenterCrop(),
+            # MaximumSquareCenterCrop(),
             # A.Resize(width=size, height=size),
             A.RandomResizedCrop(width=size, height=size, scale=[0.9, 1.1]),
 
@@ -107,54 +108,55 @@ class USDataset(Dataset):
 
         augs['test'] = [
             MaximumSquareCenterCrop(),
-            A.Resize(size, size),
+            A.CenterCrop(size, size),
         ]
 
         augs['all'] = augs['test']
 
-        if normalize:
-            common_augs = [
-                A.Normalize(mean=MEAN, std=STD),
-                ToTensorV2(),
-            ]
-        else:
-            common_augs = [ToTensorV2()]
-
+        # select aug
         if aug_mode == 'same':
             aug = augs[target]
+        elif aug_mode == 'none':
+            aug = []
         else:
             aug = augs[aug_mode]
 
-        self.albu = A.Compose(aug + common_augs)
+        if normalize:
+            aug += [A.Normalize(mean=MEAN, std=STD)]
+        aug += [ToTensorV2()]
+
+        self.albu = A.Compose(aug)
         self.load_data()
 
     def load_data(self):
         df_all = pd.read_excel('data/label.xlsx', index_col=0)
+        df_all['test'] = 0
+        df_train, df_test = train_test_split(
+            df_all,
+            test_size=self.test_ratio,
+            stratify=df_all.diagnosis,
+            random_state=self.seed)
+        df_test['test'] = 1
 
         if self.target == 'all':
             df = df_all
+        elif self.target == 'test':
+            df = df_test
+        elif self.target == 'train':
+            df = df_train
         else:
-            df_train, df_test = train_test_split(
-                df_all,
-                test_size=self.test_ratio,
-                stratify=df_all.diagnosis,
-                random_state=self.seed)
-
-            if self.target == 'test':
-                df = df_test
-            elif self.target == 'train':
-                df = df_train
-            else:
-                raise ValueError('Invalid target', self.target)
+            raise ValueError('Invalid target', self.target)
 
         self.df = df
         self.items = []
 
         for idx, row in self.df.iterrows():
             img = Image.open(f'data/cache/{self.mode}/{idx}_{self.mode}.png').copy()
-            self.items.append(Item(id=idx,
-                                   diagnosis=row['diagnosis'],
-                                   image=img))
+            self.items.append(
+                Item(id=idx,
+                     diagnosis=row['diagnosis'],
+                     image=img,
+                     test=row.test))
 
     def __len__(self):
         return int(len(self.items) * self.len_scale)

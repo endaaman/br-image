@@ -15,8 +15,9 @@ from sklearn import metrics
 
 # from gradcam.utils import visualize_cam
 # from gradcam import GradCAM, GradCAMpp
-# from endaaman.torch import TorchCommander, pil_to_tensor
-# from endaaman.metrics import MultiAccuracy
+from endaaman.torch import TorchCommander, pil_to_tensor
+from endaaman.metrics import MultiAccuracy
+from endaaman.utils import with_wrote
 
 from models import create_model, available_models
 from datasets import USDataset, MEAN, STD
@@ -66,14 +67,19 @@ class CMD(TorchCommander):
         oo = []
         for (item, result) in zip(dataset.items, results):
             result = result.tolist()
+            pred = float(result[0])
             oo.append({
-                'path': item.path,
+                'id': item.id,
                 'test': int(item.test),
-                'gt': item.diag,
-                'pred': float(result),
+                'gt': item.diagnosis,
+                'pred': pred,
+                'thres0.5': int(pred > 0.5),
+                'correct0.5': int((pred > 0.5) == item.diagnosis),
+                'thres0.3': int(pred > 0.3),
+                'correct0.3': int((pred > 0.3) == item.diagnosis),
             })
         df = pd.DataFrame(oo)
-        df.to_excel(f'out/{self.model_name}/report_{self.args.target}.xlsx', index=False)
+        df.to_excel(with_wrote(f'out/{self.checkpoint.full_name()}/report_{self.args.target}.xlsx'), index=False)
 
     def load_images_from_dir_or_file(self, src):
         paths = []
