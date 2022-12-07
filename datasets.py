@@ -36,6 +36,9 @@ P_STD  = 0.1659
 EP_MEAN = (E_MEAN + P_MEAN) / 2
 EP_STD = (E_STD + P_STD) / 2
 
+MEAN = [E_MEAN, P_MEAN, EP_MEAN]
+STD = [E_STD, P_STD, EP_STD]
+
 
 class MaximumSquareCenterCrop(ImageOnlyTransform):
     def __init__(self, always_apply=False, p=1.0):
@@ -111,7 +114,7 @@ class USDataset(Dataset):
 
         if normalize:
             common_augs = [
-                A.Normalize(mean=[E_MEAN, P_MEAN, EP_MEAN], std=[E_STD, P_STD, EP_STD]),
+                A.Normalize(mean=MEAN, std=STD),
                 ToTensorV2(),
             ]
         else:
