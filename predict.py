@@ -56,8 +56,8 @@ class CMD(TorchCommander):
 
 
     def arg_dataset(self, parser):
-        pass
         # parser.add_argument('--target', '-t', choices=['test', 'train', 'all'], default='all')
+        parser.add_argument('--out-dir', '-o', default='out')
 
     def run_dataset(self):
         dataset = USDataset(
@@ -74,7 +74,7 @@ class CMD(TorchCommander):
             oo.append({
                 'id': item.id,
                 'test': int(item.test),
-                'gt': item.diagnosis,
+                'gt': int(item.diagnosis),
                 'pred': pred,
             })
         df_all = pd.DataFrame(oo)
@@ -85,22 +85,29 @@ class CMD(TorchCommander):
             'all': df_all,
         }
 
+        print(dfs)
+
         mm = OrderedDict()
 
         for t in ['train', 'test', 'all']:
             df = dfs[t]
             m = {}
-            fpr, tpr, thresholds = metrics.roc_curve(df.gt, df.pred)
+            print(t, df)
+            print('gt')
+            print(df['gt'])
+            print('pred')
+            print(df['pred'])
+            fpr, tpr, thresholds = metrics.roc_curve(df['gt'], df['pred'])
             auc = metrics.auc(fpr, tpr)
             plt.plot(fpr, tpr, label=f'{t} auc={auc:.3f}')
 
             scoress = {
                 # f1: point to maximize f1 score
-                'f1': [metrics.f1_score(df.gt, pred > t) for t in thresholds],
+                'f1': [metrics.f1_score(df['gt'], df['pred'] > t) for t in thresholds],
                 # youden: tanget to 45degree line
                 'youden': tpr - fpr,
                 # top-left: nearest to top-left corner
-                'top-left': (- tpr + 1) ** 2 + fpr ** 2,
+                'top-left': -((- tpr + 1) ** 2 + fpr ** 2),
             }
 
             for name, scores in scoress.items():
@@ -125,11 +132,11 @@ class CMD(TorchCommander):
         plt.savefig(os.path.join(d, 'roc.png'))
         plt.close()
 
-        dest_path = os.path.join(d, f'report_{self.args.target}.xlsx')
+        dest_path = os.path.join(d, f'report.xlsx')
         with pd.ExcelWriter(dest_path) as w: # pylint: disable=abstract-class-instantiated
             df.to_excel(w, sheet_name='values', index=False)
             for t, m in mm.items():
-                df2.to_excel(m, sheet_name=f'{t} metrics', index=False)
+                m.to_excel(w, sheet_name=f'{t} metrics')
 
     def load_images_from_dir_or_file(self, src):
         paths = []

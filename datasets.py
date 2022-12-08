@@ -136,7 +136,10 @@ class USDataset(Dataset):
             test_size=self.test_ratio,
             stratify=df_all.diagnosis,
             random_state=self.seed)
+
         df_test['test'] = 1
+        # df_train['test'] = 0
+        df_all.loc[df_test.index, 'test'] = 1
 
         if self.target == 'all':
             df = df_all
@@ -156,7 +159,7 @@ class USDataset(Dataset):
                 Item(id=idx,
                      diagnosis=row['diagnosis'],
                      image=img,
-                     test=row.test))
+                     test=row['test']))
 
     def __len__(self):
         return int(len(self.items) * self.len_scale)
