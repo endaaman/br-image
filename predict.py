@@ -5,6 +5,7 @@ from collections import OrderedDict
 
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 from sklearn import metrics
 from torch import nn
 from tqdm import tqdm
@@ -55,11 +56,12 @@ class CMD(TorchCommander):
 
 
     def arg_dataset(self, parser):
-        parser.add_argument('--target', '-t', choices=['test', 'train', 'all'], default='all')
+        pass
+        # parser.add_argument('--target', '-t', choices=['test', 'train', 'all'], default='all')
 
     def run_dataset(self):
         dataset = USDataset(
-            target=self.args.target,
+            target='all',
             normalize=False, aug_mode='none'
         )
 
@@ -87,18 +89,16 @@ class CMD(TorchCommander):
 
         for t in ['train', 'test', 'all']:
             df = dfs[t]
-
             m = {}
-
             fpr, tpr, thresholds = metrics.roc_curve(df.gt, df.pred)
+            auc = metrics.auc(fpr, tpr)
+            plt.plot(fpr, tpr, label=f'{t} auc={auc:.3f}')
 
             scoress = {
                 # f1: point to maximize f1 score
                 'f1': [metrics.f1_score(df.gt, pred > t) for t in thresholds],
-
                 # youden: tanget to 45degree line
                 'youden': tpr - fpr,
-
                 # top-left: nearest to top-left corner
                 'top-left': (- tpr + 1) ** 2 + fpr ** 2,
             }
@@ -113,7 +113,19 @@ class CMD(TorchCommander):
 
             mm[t] = pd.DataFrame(m)
 
-        dest_path = f'out/{self.checkpoint.full_name()}/report_{self.args.target}.xlsx'
+        plt.legend()
+        plt.title('ROC curve')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.grid(True)
+
+        d = os.path.join(self.args.out_dir, self.checkpoint.full_name())
+        os.makedirs(d, exist_ok=True)
+
+        plt.savefig(os.path.join(d, 'roc.png'))
+        plt.close()
+
+        dest_path = os.path.join(d, f'report_{self.args.target}.xlsx')
         with pd.ExcelWriter(dest_path) as w: # pylint: disable=abstract-class-instantiated
             df.to_excel(w, sheet_name='values', index=False)
             for t, m in mm.items():
