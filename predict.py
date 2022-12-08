@@ -1,6 +1,7 @@
 import os
 import re
 from glob import glob
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -74,38 +75,49 @@ class CMD(TorchCommander):
                 'gt': item.diagnosis,
                 'pred': pred,
             })
+        df_all = pd.DataFrame(oo)
 
-        df = pd.DataFrame(oo)
-        mm = {}
-
-
-        fpr, tpr, thresholds = metrics.roc_curve(df.gt, df.pred)
-
-        scoress = {
-            # f1: point to maximize f1 score
-            'f1': [metrics.f1_score(df.gt, pred > t) for t in thresholds],
-
-            # youden: tanget to 45degree line
-            'youden': tpr - fpr,
-
-            # top-left: nearest to top-left corner
-            'top-left': (- tpr + 1) ** 2 + fpr ** 2,
+        dfs = {
+            'test': df_all[df_all['test'] == 1],
+            'train': df_all[df_all['test'] == 0],
+            'all': df_all,
         }
 
-        for name, scores in scoress.items():
-            idx = np.argmax(scores)
-            mm[name] = {
-                'threshold': thresholds[idx],
-                'recall': tpr[idx],
-                'spec': 1 - fpr[idx],
+        mm = OrderedDict()
+
+        for t in ['train', 'test', 'all']:
+            df = dfs[t]
+
+            m = {}
+
+            fpr, tpr, thresholds = metrics.roc_curve(df.gt, df.pred)
+
+            scoress = {
+                # f1: point to maximize f1 score
+                'f1': [metrics.f1_score(df.gt, pred > t) for t in thresholds],
+
+                # youden: tanget to 45degree line
+                'youden': tpr - fpr,
+
+                # top-left: nearest to top-left corner
+                'top-left': (- tpr + 1) ** 2 + fpr ** 2,
             }
 
-        df2 = pd.DataFrame(mm)
+            for name, scores in scoress.items():
+                idx = np.argmax(scores)
+                m[name] = {
+                    'threshold': thresholds[idx],
+                    'recall': tpr[idx],
+                    'spec': 1 - fpr[idx],
+                }
+
+            mm[t] = pd.DataFrame(m)
 
         dest_path = f'out/{self.checkpoint.full_name()}/report_{self.args.target}.xlsx'
         with pd.ExcelWriter(dest_path) as w: # pylint: disable=abstract-class-instantiated
             df.to_excel(w, sheet_name='values', index=False)
-            df2.to_excel(w, sheet_name='metrics', index=False)
+            for t, m in mm.items():
+                df2.to_excel(m, sheet_name=f'{t} metrics', index=False)
 
     def load_images_from_dir_or_file(self, src):
         paths = []
