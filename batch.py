@@ -194,7 +194,6 @@ class C(Commander):
         print('done')
 
     def arg_cache(self, parser):
-        parser.add_argument('--src', default='data/images/')
         parser.add_argument('--dest', default='data/cache/')
         parser.add_argument('--target', '-t', type=str, nargs='+', default=[])
         parser.add_argument('--swap', action='store_true')
@@ -235,15 +234,15 @@ class C(Commander):
                 mask_image_base = Image.open(mask_path)
                 dummy = np.zeros(base_size[::-1], dtype=np.uint8)
                 rect = rule.e_rect() if row['swap'] else rule.p_rect()
-                mask_image = mask_image_base.crop(rect).convert('L')
-                m_arr = np.array(mask_image)
+                mask_image = mask_image_base.crop(rect)
+                m_arr = np.array(mask_image)[:, :, 3]
             else:
                 m_arr = d_arr
 
             # RGB -> GBR
             pem = Image.fromarray(np.stack([p_arr, e_arr, m_arr], 0).transpose((1, 2, 0)))
             pe =  Image.fromarray(np.stack([p_arr, e_arr, d_arr], 0).transpose((1, 2, 0)))
-            m =   Image.fromarray(m_arr, mode='L')
+            m =   Image.fromarray(m_arr)
 
             for (img, name) in ((pem, 'pem'), (pe, 'pe'), (m, 'm')):
                 img = pad2square(img, 720)
