@@ -22,7 +22,7 @@ class EffNet(nn.Module):
     def forward(self, x):
         x =  self.base(x)
         if self.num_classes > 1:
-            x = torch.softmax(x, dim=1)
+            x = torch.softmax(x, dim=-1)
         else:
             x = torch.sigmoid(x)
         return x
@@ -44,19 +44,13 @@ def create_model(name, num_classes):
     raise ValueError(f'Invalid name: {name}')
 
 
-available_models = \
-    [f'eff_b{i}_ns' for i in range(8)] + \
-    [f'eff_v2_b{i}' for i in range(4)] + \
-    ['eff_v2_s', 'eff_v2_s','eff_v2_l' ]
-
-
 if __name__ == '__main__':
     n = 'eff_v2_b3'
     model = create_model(n, 3)
-    count = sum(p.numel() for p in model.parameters()) / 1000000
-    print(f'count: {count}M')
-    x = torch.rand([2, 3, 512, 512])
-    y = model(x)
+    count = sum(p.numel() for p in model.parameters()) / 1_000_000
+    print(f'count: {count:.2f}M')
+    x_ = torch.rand([2, 3, 512, 512])
+    y_ = model(x_)
     # loss = CrossEntropyLoss()
     # print('y', y, y.shape, 'loss', loss(y, torch.LongTensor([1, 1])))
-    print('y', y, y.shape)
+    print('y', y_, y_.shape)

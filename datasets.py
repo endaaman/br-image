@@ -26,8 +26,14 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class Item(NamedTuple):
     id: int
-    diagnosis: bool
     image: ImageType
+    diagnosis: bool
+    test: bool
+
+class MaskItem(NamedTuple):
+    id: int
+    image: ImageType
+    mask: ImageType
     test: bool
 
 E_MEAN = 0.1820
@@ -65,12 +71,11 @@ class MaximumSquareRandomCrop(ImageOnlyTransform):
 
 
 class USDataset(Dataset):
-    def __init__(self, target='all', aug_mode='same', mode='pem', size=512,
+    def __init__(self, target='all', mode='pem', aug_mode='same', size=512,
                  normalize=True, test_ratio=0.25, len_scale=1, seed=42):
         self.target = target
-        self.size = size
         self.mode = mode
-
+        self.size = size
         self.test_ratio = test_ratio
         self.len_scale = len_scale
         self.seed = seed
@@ -78,14 +83,7 @@ class USDataset(Dataset):
         # margin = size//20
         augs = {}
         augs['train'] = [
-            # A.RandomResizedCrop(width=size, height=size, scale=[0.9, 1.0]),
-
-            # MaximumSquareRandomCrop(),
-            # A.Resize(size+margin*2, size+margin*2),
-            # A.RandomCrop(size, size),
-
-            # MaximumSquareCenterCrop(),
-            # A.Resize(width=size, height=size),
+            A.Resize(width=size, height=size),
             A.RandomResizedCrop(width=size, height=size, scale=[0.9, 1.1]),
 
             A.HorizontalFlip(p=0.5),
@@ -107,8 +105,7 @@ class USDataset(Dataset):
         ]
 
         augs['test'] = [
-            MaximumSquareCenterCrop(),
-            A.CenterCrop(size, size),
+            A.Resize(width=size, height=size),
         ]
 
         augs['all'] = augs['test']
@@ -153,27 +150,48 @@ class USDataset(Dataset):
         self.df = df
         self.items = []
 
-        for idx, row in self.df.iterrows():
-            img = Image.open(f'data/cache/{self.mode}/{idx}_{self.mode}.png').copy()
-            self.items.append(
-                Item(id=idx,
-                     diagnosis=row['diagnosis'],
-                     image=img,
-                     test=row['test']))
+        if self.mode == 'seg':
+            for idx, row in self.df.iterrows():
+                img = Image.open(f'data/cache/pe/{idx}_pe.png').copy()
+                mask = Image.open(f'data/cache/m/{idx}_m.png').copy()
+                self.items.append(
+                    MaskItem(id=idx,
+                         image=img,
+                         mask=mask,
+                         test=row['test']))
+        else:
+            for idx, row in self.df.iterrows():
+                img = Image.open(f'data/cache/{self.mode}/{idx}_{self.mode}.png').copy()
+                self.items.append(
+                    Item(id=idx,
+                         image=img,
+                         diagnosis=row['diagnosis'],
+                         test=row['test']))
 
     def __len__(self):
         return int(len(self.items) * self.len_scale)
 
     def __getitem__(self, idx):
         item = self.items[idx % len(self.items)]
-        t = self.albu(image=np.array(item.image))['image']
-        return t, torch.FloatTensor([item.diagnosis])
+        if self.mode == 'seg':
+            auged = self.albu(
+                image=np.array(item.image),
+                mask=np.array(item.mask),
+            )
+            x = auged['image']
+            y = auged['mask']
+        else:
+            x = self.albu(image=np.array(item.image))['image']
+            y = torch.FloatTensor([item.diagnosis])
+
+        return x, y
 
 
 class C(Commander):
     def arg_common(self, parser):
         parser.add_argument('--target', '-t', default='all', choices=['all', 'train', 'test'])
         parser.add_argument('--aug', '-a', default='same', choices=['same', 'train', 'test'])
+        parser.add_argument('--mode', '-m', default='pem', choices=['pe', 'pem', 'pem_', 'seg'])
         parser.add_argument('--size', '-s', type=int, default=256)
         # parser.add_argument('--a-flip', action='store_true')
         # parser.add_argument('--a-rotate', type=int, default=10)
@@ -182,6 +200,7 @@ class C(Commander):
     def pre_common(self):
         self.ds = USDataset(
             target=self.args.target,
+            mode=self.args.mode,
             aug_mode=self.args.aug,
             size=self.args.size,
             normalize=self.args.function != 'samples',
@@ -209,8 +228,8 @@ class C(Commander):
         for (x, y) in self.ds:
             self.x = x
             self.y = y
-            print(y, x.shape)
-            self.i = tensor_to_pil(x)
+            tensor_to_pil(x).save('tmp/x.png')
+            tensor_to_pil(y).save('tmp/y.png')
             break
 
 if __name__ == '__main__':

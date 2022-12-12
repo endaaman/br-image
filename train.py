@@ -15,7 +15,7 @@ from endaaman.torch import TrainCommander
 from endaaman.trainer import Trainer
 from endaaman.metrics import BinaryAccuracy, BinaryAUC, BinaryRecall, BinarySpecificity
 
-from models import create_model, available_models
+from models import create_model
 from datasets import USDataset
 
 
@@ -66,7 +66,7 @@ class T(Trainer):
 
 class CMD(TrainCommander):
     def arg_common(self, parser):
-        parser.add_argument('--model', '-m', choices=available_models, default='eff_v2_b0')
+        parser.add_argument('--model', '-m', default='eff_v2_b0')
 
     def arg_start(self, parser):
         parser.add_argument('--size', type=int, default=512)
