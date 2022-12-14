@@ -1,8 +1,10 @@
 import re
+
 import torch
-import timm
 from torch import nn
 from torchvision import transforms, models
+import timm
+import segmentation_models_pytorch as smp
 
 
 class EffNet(nn.Module):
@@ -29,6 +31,22 @@ class EffNet(nn.Module):
 
 
 def create_model(name, num_classes):
+    if m := re.match(r'^eff_(b[0-7])$', name):
+        return EffNet(name=m[1], num_classes=num_classes)
+
+    if m := re.match(r'^eff_(b[0-7]_ns)$', name):
+        return EffNet(name=m[1], num_classes=num_classes)
+
+    if m := re.match(r'^eff_(v2_b[0-4])$', name):
+        return EffNet(name=m[1], num_classes=num_classes)
+
+    if m := re.match(r'^eff_(v2_s|m|l)$', name):
+        return EffNet(name=m[1], num_classes=num_classes)
+
+    raise ValueError(f'Invalid name: {name}')
+
+
+def create_seg_model(name, num_classes):
     if m := re.match(r'^eff_(b[0-7])$', name):
         return EffNet(name=m[1], num_classes=num_classes)
 

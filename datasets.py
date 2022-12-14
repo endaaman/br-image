@@ -152,8 +152,8 @@ class USDataset(Dataset):
 
         if self.mode == 'seg':
             for idx, row in self.df.iterrows():
-                img = Image.open(f'data/cache/pe/{idx}_pe.png').copy()
-                mask = Image.open(f'data/cache/m/{idx}_m.png').copy()
+                img = Image.open(f'data/crop/pe/{idx}_pe.png').copy()
+                mask = Image.open(f'data/crop/m/{idx}_m.png').copy()
                 self.items.append(
                     MaskItem(id=idx,
                          image=img,
@@ -161,7 +161,7 @@ class USDataset(Dataset):
                          test=row['test']))
         else:
             for idx, row in self.df.iterrows():
-                img = Image.open(f'data/cache/{self.mode}/{idx}_{self.mode}.png').copy()
+                img = Image.open(f'data/crop/{self.mode}/{idx}_{self.mode}.png').copy()
                 self.items.append(
                     Item(id=idx,
                          image=img,

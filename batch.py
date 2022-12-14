@@ -99,15 +99,15 @@ roi_rules = {
 
 }
 
-def get_default_style_by_image(img):
+def get_res_code_by_image(img):
     if img.size == (960, 720):
-        t = 'A_hor'
+        t = 'A'
     elif img.size == (1280, 720):
-        t = 'B_hor'
+        t = 'B'
     elif img.size == (1280, 960):
-        t = 'C_ver'
+        t = 'C'
     elif img.size == (1552, 873):
-        t = 'D_hor'
+        t = 'D'
     else:
         t = 'unknown'
     return t
@@ -125,7 +125,7 @@ def pad2square(img, new_size=None):
 
 class C(Commander):
     def arg_convert_dicom(self, parser):
-        parser.add_argument('--src', default='data/dicom')
+        parser.add_argument('--src', default='data/DICOM')
         parser.add_argument('--dest', default='data/images')
 
     def run_convert_dicom(self):
@@ -165,7 +165,7 @@ class C(Commander):
             id_ = m[1]
             print(id_, p)
             img = Image.open(p)
-            t = get_default_style_by_image(img)
+            t = get_res_code_by_image(img)
             data.append({
                 'id': id_,
                 'style': t,
@@ -174,34 +174,59 @@ class C(Commander):
         pd.DataFrame(data).to_csv(with_wrote('out/types.csv'), index=False)
 
 
-    def run_check_label(self):
+    def run_check_integrity(self):
         df = pd.read_excel('data/label.xlsx', index_col=0)
 
-        paths = sorted(glob('data/images/*.png'))
+        target_dirs = [
+            'images',
+            'crop/p',
+            'crop/e',
+            'crop/m',
+            'crop/pe',
+            'crop/pem',
+        ]
 
-        print('checking images')
+        for td in target_dirs:
+            print(f'checking {td}')
+            paths = sorted(glob(os.path.join('data', td, '/*.png')))
+            for p in paths:
+                name = os.path.splitext(os.path.basename(p))[0]
+                if not name in df.index:
+                    print(f'{p} exists but {name} is not registered to df')
+
+        print('checking pe')
         for p in paths:
             name = os.path.splitext(os.path.basename(p))[0]
             if not name in df.index:
                 print(f'{p} exists but {name} is not registered to df')
 
         print('checking df')
-        for idx, __row in df.iterrows():
-            path = f'data/images/{idx}.png'
-            if not os.path.exists(path):
-                print(f'{name} is not registered but {path} does not exist')
+        for idx, row in df.iterrows():
+
+            for td in target_dirs:
+                s = td.split('/')
+                fn = f'{idx}.png' if len(s) == 1 else f'{idx}_{s[-1]}.png'
+                path = os.path.join('data', td, fn)
+
+                if not os.path.isfile(path):
+                    print(f'{idx} is not registered but {path} does not exist')
+
+            if pd.isna(row.resolution):
+                i = Image.open(f'data/images/{idx}.png')
+                print(f'{idx} has no res code. It may be: ', get_res_code_by_image(i))
 
         print('done')
 
-    def arg_cache(self, parser):
-        parser.add_argument('--dest', default='data/cache/')
+    def arg_crop(self, parser):
+        parser.add_argument('--src', default='data/images/')
+        parser.add_argument('--dest', default='data/crop/')
         parser.add_argument('--target', '-t', type=str, nargs='+', default=[])
         parser.add_argument('--swap', action='store_true')
         parser.add_argument('--square', action='store_true')
         parser.add_argument('--id', type=str)
 
-    def run_cache(self):
-        df = pd.read_excel('data/label.xlsx', index_col=0).dropna()
+    def run_crop(self):
+        df = pd.read_excel('data/label.xlsx', index_col=0)
         os.makedirs(self.args.dest, exist_ok=True)
 
         if len(self.args.target) > 0:
@@ -216,7 +241,8 @@ class C(Commander):
             if not rule:
                 raise ValueError(f'{idx}({rule_code}) is unknown image type.')
 
-            original_image = Image.open(f'data/images/{idx}.png')
+            original_image_path = os.path.join(self.args.src, f'{idx}.png')
+            original_image = Image.open(original_image_path)
 
             plain_image = original_image.crop(rule.p_rect()).convert('L')
             enhance_image = original_image.crop(rule.e_rect()).convert('L')
@@ -242,9 +268,19 @@ class C(Commander):
             # RGB -> GBR
             pem = Image.fromarray(np.stack([p_arr, e_arr, m_arr], 0).transpose((1, 2, 0)))
             pe =  Image.fromarray(np.stack([p_arr, e_arr, d_arr], 0).transpose((1, 2, 0)))
-            m =   Image.fromarray(m_arr)
+            m =  Image.fromarray(m_arr)
+            p =  Image.fromarray(p_arr)
+            e =  Image.fromarray(e_arr)
 
-            for (img, name) in ((pem, 'pem'), (pe, 'pe'), (m, 'm')):
+            targets = {
+                'p': p,
+                'e': e,
+                'pe': pe,
+                'm': m,
+                'pem': pem,
+            }
+
+            for name, img in targets.items():
                 img = pad2square(img, 720)
                 d = os.path.join(self.args.dest, name)
                 os.makedirs(d, exist_ok=True)
@@ -255,8 +291,8 @@ class C(Commander):
 
 
     def arg_extract_mask(self, parser):
-        parser.add_argument('--src', '-s', required=True)
-        parser.add_argument('--dest', '-d', default='tmp/mask')
+        parser.add_argument('--src', '-s', default='data/draw')
+        parser.add_argument('--dest', '-d', default='data/mask')
 
     def run_extract_mask(self):
         if os.path.isdir(self.args.src):
