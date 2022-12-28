@@ -11,25 +11,12 @@ import torch
 from torch import nn
 from torch import optim
 from timm.scheduler.cosine_lr import CosineLRScheduler
-from endaaman.torch import TrainCommander
-from endaaman.trainer import Trainer
+from endaaman.trainer import Trainer, TrainCommander
 from endaaman.metrics import BinaryAccuracy, BinaryAUC, BinaryRecall, BinarySpecificity
 
-from models import create_model
+from models import create_seg_model
 from datasets import USDataset
 
-
-class FocalBCELoss(nn.Module):
-    def __init__(self, gamma):
-        super().__init__()
-        self.gamma = gamma
-        self.bceloss = nn.BCELoss(reduction='none')
-
-    def forward(self, outputs, targets):
-        bce = self.bceloss(outputs, targets)
-        bce_exp = torch.exp(-bce)
-        focal_loss = (1-bce_exp)**self.gamma * bce
-        return focal_loss.mean()
 
 class T(Trainer):
     def prepare(self, **kwargs):
@@ -49,48 +36,39 @@ class T(Trainer):
 
     def eval(self, inputs, labels):
         outputs = self.model(inputs.to(self.device))
+        outputs = outputs.flatten(start_dim=1)
+        labels = labels.flatten(start_dim=1)
         loss = self.criterion(outputs, labels.to(self.device))
         return loss, outputs
 
     def get_metrics(self):
         return {
-            'batch': {
-                'acc': BinaryAccuracy(),
-                'recall': BinaryRecall(),
-                'spec': BinarySpecificity()
-            },
-            'epoch': {
-                'auc': BinaryAUC(),
-            },
+            'batch': { },
+            'epoch': { },
         }
 
 
 class CMD(TrainCommander):
     def arg_common(self, parser):
-        parser.add_argument('--model', '-m', default='eff_v2_b0')
+        parser.add_argument('--model', '-m', default='seg_eff_b0')
 
     def arg_start(self, parser):
         parser.add_argument('--size', type=int, default=512)
-        parser.add_argument('--short', action='store_true')
-        parser.add_argument('--mode', default='pem')
 
     def run_start(self):
-        model = create_model(self.args.model)
+        model = create_seg_model(self.args.model)
 
         loaders = [self.as_loader(USDataset(
             size=self.args.size,
             target=t,
-            mode=self.args.mode,
-            len_scale=0.02 if self.args.short else 1,
+            mode='seg',
         )) for t in ['train', 'test']]
 
-        trainer = T(
-            name=self.args.model,
+        trainer = self.create_trainer(
+            T=T,
+            name=self.a.model,
             model=model,
             loaders=loaders,
-            device=self.device,
-            save_period=self.args.save_period,
-            suffix=self.args.suffix,
         )
 
         trainer.start(self.args.epoch, lr=self.args.lr)

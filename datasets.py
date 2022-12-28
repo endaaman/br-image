@@ -74,7 +74,7 @@ class USDataset(Dataset):
     def __init__(self, target='all', mode='pem', aug_mode='same', size=512,
                  normalize=True, test_ratio=0.25, len_scale=1, seed=42):
         self.target = target
-        self.mode = mode
+        self.mode = mode # ['p', 'e', 'pe', 'pem', 'seg']
         self.size = size
         self.test_ratio = test_ratio
         self.len_scale = len_scale
@@ -179,12 +179,13 @@ class USDataset(Dataset):
                 mask=np.array(item.mask),
             )
             x = auged['image']
-            y = auged['mask']
+            y = auged['mask'][None].float() / 255
         else:
             x = self.albu(image=np.array(item.image))['image']
             y = torch.FloatTensor([item.diagnosis])
 
         return x, y
+
 
 
 class C(Commander):
@@ -233,10 +234,5 @@ class C(Commander):
             break
 
 if __name__ == '__main__':
-    # ds = USDataset()
-    # for (x, y) in ds:
-    #     print(x.shape)
-    #     print(y)
-    #     break
     c = C()
     c.run()
