@@ -67,7 +67,7 @@ class T(Trainer):
 
 class CMD(TrainCommander):
     def arg_common(self, parser):
-        parser.add_argument('--model', '-m', default='eff_v2_b0')
+        parser.add_argument('--model', '-m', default='tf_efficientnetv2_b0')
 
     def arg_start(self, parser):
         parser.add_argument('--size', type=int, default=512)
@@ -77,7 +77,7 @@ class CMD(TrainCommander):
     def run_start(self):
         model = create_model(self.args.model)
 
-        loaders = [self.as_loader(USDataset(
+        loaders = [self.as_loader(PEMDataset(
             size=self.args.size,
             target=t,
             mode=self.args.mode,
