@@ -70,11 +70,10 @@ class MaximumSquareRandomCrop(ImageOnlyTransform):
         return ()
 
 
-class USDataset(Dataset):
-    def __init__(self, target='all', mode='pem', aug_mode='same', size=512,
+class BaseDataset(Dataset):
+    def __init__(self, target='all', aug_mode='same', size=512,
                  normalize=True, test_ratio=0.25, len_scale=1, seed=42):
         self.target = target
-        self.mode = mode # ['p', 'e', 'pe', 'pem', 'seg']
         self.size = size
         self.test_ratio = test_ratio
         self.len_scale = len_scale
@@ -138,52 +137,85 @@ class USDataset(Dataset):
         # df_train['test'] = 0
         df_all.loc[df_test.index, 'test'] = 1
 
-        if self.target == 'all':
-            df = df_all
-        elif self.target == 'test':
-            df = df_test
-        elif self.target == 'train':
-            df = df_train
-        else:
-            raise ValueError('Invalid target', self.target)
+        self.df = {
+            'all': df_all,
+            'test': df_test,
+            'train': df_train
+        }[self.target]
 
-        self.df = df
         self.items = []
 
-        if self.mode == 'seg':
-            for idx, row in self.df.iterrows():
-                img = Image.open(f'data/crop/pe/{idx}_pe.png').copy()
-                mask = Image.open(f'data/crop/m/{idx}_m.png').copy()
-                self.items.append(
-                    MaskItem(id=idx,
-                         image=img,
-                         mask=mask,
-                         test=row['test']))
-        else:
-            for idx, row in self.df.iterrows():
-                img = Image.open(f'data/crop/{self.mode}/{idx}_{self.mode}.png').copy()
-                self.items.append(
-                    Item(id=idx,
-                         image=img,
-                         diagnosis=row['diagnosis'],
-                         test=row['test']))
+        for idx, row in tqdm(self.df.iterrows(), total=len(self.df)):
+            item = self.load_item(idx, row)
+            if item:
+                self.items.append(item)
 
     def __len__(self):
         return int(len(self.items) * self.len_scale)
 
     def __getitem__(self, idx):
-        item = self.items[idx % len(self.items)]
-        if self.mode == 'seg':
-            auged = self.albu(
-                image=np.array(item.image),
-                mask=np.array(item.mask),
-            )
-            x = auged['image']
-            y = auged['mask'][None].float() / 255
-        else:
-            x = self.albu(image=np.array(item.image))['image']
-            y = torch.FloatTensor([item.diagnosis])
+        raise RuntimeError('Do override')
 
+
+class SegDataset(BaseDataset):
+    def load_item(self, idx, row):
+        img = Image.open(f'data/crop/pe/{idx}_pe.png').copy()
+        mask = Image.open(f'data/crop/m/{idx}_m.png').copy()
+        return MaskItem(id=idx,
+                        image=img,
+                        mask=mask,
+                        test=row['test'])
+
+    def __getitem__(self, idx):
+        item = self.items[idx % len(self.items)]
+        auged = self.albu(
+            image=np.array(item.image),
+            mask=np.array(item.mask),
+        )
+        x = auged['image']
+        y = auged['mask'][None].float() / 255
+
+        return x, y
+
+
+class PEMDataset(BaseDataset):
+    def __init__(self, *args, **kwargs):
+        self.mode = kwargs.pop('mode') # ['p', 'e', 'pe', 'pem']
+        super().__init__(**kwargs)
+
+    def load_item(self, idx, row):
+        img = Image.open(f'data/crop/{self.mode}/{idx}_{self.mode}.png').copy()
+        return Item(id=idx,
+                    image=img,
+                    diagnosis=row['diagnosis'],
+                    test=row['test'])
+
+    def __getitem__(self, idx):
+        item = self.items[idx % len(self.items)]
+        x = self.albu(image=np.array(item.image))['image']
+        y = torch.FloatTensor([item.diagnosis])
+        return x, y
+
+
+class CroppedDataset(BaseDataset):
+    def load_item(self, idx, row):
+        mask = np.array(Image.open(f'data/crop/m/{idx}_m.png'))
+        if not np.any(mask):
+            # skip if mask is empty
+            return None
+        h = np.where(np.sum(mask, axis=1))[0][[0, -1]]
+        w = np.where(np.sum(mask, axis=0))[0][[0, -1]]
+        pe = Image.open(f'data/crop/pe/{idx}_pe.png')
+        cropped = pe.crop((w[0], h[0], w[1], h[1]))
+        return Item(id=idx,
+                    image=cropped,
+                    diagnosis=row['diagnosis'],
+                    test=row['test'])
+
+    def __getitem__(self, idx):
+        item = self.items[idx % len(self.items)]
+        x = self.albu(image=np.array(item.image))['image']
+        y = torch.FloatTensor([item.diagnosis])
         return x, y
 
 
@@ -192,20 +224,35 @@ class C(Commander):
     def arg_common(self, parser):
         parser.add_argument('--target', '-t', default='all', choices=['all', 'train', 'test'])
         parser.add_argument('--aug', '-a', default='same', choices=['same', 'train', 'test'])
-        parser.add_argument('--mode', '-m', default='pem', choices=['pe', 'pem', 'pem_', 'seg'])
+        parser.add_argument('--mode', '-m', default='pem', choices=['pe', 'pem', 'pem_', 'seg', 'crop'])
         parser.add_argument('--size', '-s', type=int, default=256)
         # parser.add_argument('--a-flip', action='store_true')
         # parser.add_argument('--a-rotate', type=int, default=10)
         # parser.add_argument('--a-shrink', type=float, default=0.3)
 
     def pre_common(self):
-        self.ds = USDataset(
-            target=self.args.target,
-            mode=self.args.mode,
-            aug_mode=self.args.aug,
-            size=self.args.size,
-            normalize=self.args.function != 'samples',
-        )
+        if self.a.mode == 'seg':
+            self.ds = SegDataset(
+                target=self.args.target,
+                aug_mode=self.args.aug,
+                size=self.args.size,
+                normalize=self.args.function != 'samples',
+            )
+        elif self.a.mode == 'crop':
+            self.ds = CroppedDataset(
+                target=self.args.target,
+                aug_mode=self.args.aug,
+                size=self.args.size,
+                normalize=self.args.function != 'samples',
+            )
+        else:
+            self.ds = PEMDataset(
+                mode=self.args.mode,
+                target=self.args.target,
+                aug_mode=self.args.aug,
+                size=self.args.size,
+                normalize=self.args.function != 'samples',
+            )
 
     def arg_samples(self, parser):
         parser.add_argument('--length', '-l', type=int)
@@ -229,8 +276,11 @@ class C(Commander):
         for (x, y) in self.ds:
             self.x = x
             self.y = y
+            print(x.shape)
+            print(y.shape)
             tensor_to_pil(x).save('tmp/x.png')
-            tensor_to_pil(y).save('tmp/y.png')
+            if self.a.mode == 'seg':
+                tensor_to_pil(y).save('tmp/y.png')
             break
 
 if __name__ == '__main__':
