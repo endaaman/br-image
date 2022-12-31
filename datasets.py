@@ -5,7 +5,7 @@ import shutil
 from glob import glob
 from typing import NamedTuple, Callable
 from collections import OrderedDict
-from endaaman import Commander
+from endaaman import Commander, pad_to_square
 from endaaman.torch import calc_mean_and_std, pil_to_tensor, tensor_to_pil
 
 import torch
@@ -207,8 +207,16 @@ class CroppedDataset(BaseDataset):
         w = np.where(np.sum(mask, axis=0))[0][[0, -1]]
         pe = Image.open(f'data/crop/pe/{idx}_pe.png')
         cropped = pe.crop((w[0], h[0], w[1], h[1]))
+        # bg = Image.new('RGB', (self.size, self.size))
+        # paste_center(bg, cropped)
+        # if bg.width < cropped.width:
+        #     print('w', idx, bg.width, cropped.width)
+        # if bg.height < cropped.height:
+        #     print('h', idx, bg.height, cropped.height)
+
+        img = pad_to_square(cropped, self.size)
         return Item(id=idx,
-                    image=cropped,
+                    image=img,
                     diagnosis=row['diagnosis'],
                     test=row['test'])
 
@@ -225,7 +233,7 @@ class C(Commander):
         parser.add_argument('--target', '-t', default='all', choices=['all', 'train', 'test'])
         parser.add_argument('--aug', '-a', default='same', choices=['same', 'train', 'test'])
         parser.add_argument('--mode', '-m', default='pem', choices=['pe', 'pem', 'pem_', 'seg', 'crop'])
-        parser.add_argument('--size', '-s', type=int, default=256)
+        parser.add_argument('--size', '-s', type=int, default=512)
         # parser.add_argument('--a-flip', action='store_true')
         # parser.add_argument('--a-rotate', type=int, default=10)
         # parser.add_argument('--a-shrink', type=float, default=0.3)
@@ -261,27 +269,37 @@ class C(Commander):
     def run_samples(self):
         t = self.args.target
         d = self.args.dest or t
-        dest = f'out/samples/{d}'
+        dest = f'tmp/samples_{self.a.mode}/{d}'
         os.makedirs(dest, exist_ok=True)
         total = self.args.length or len(self.ds)
-        for i, (x, y) in tqdm(enumerate(self.ds), total=total):
-            if i > total:
+        i = 0
+        for x, y in tqdm(self.ds, total=total):
+            if i >= total:
                 break
             self.x = x
             self.y = y
+            item = self.ds.items[i]
             img = tensor_to_pil(x)
-            img.save(f'{dest}/{i}_{int(y)}.png')
+            img.save(f'{dest}/{item.id}_{int(y)}.png')
+            i += 1
+
+    def arg_t(self, parser):
+        parser.add_argument('--index', '-i', type=int, default=0)
+        parser.add_argument('--id', '-d', type=str)
 
     def run_t(self):
+        i = 0
         for (x, y) in self.ds:
             self.x = x
             self.y = y
-            print(x.shape)
-            print(y.shape)
-            tensor_to_pil(x).save('tmp/x.png')
-            if self.a.mode == 'seg':
-                tensor_to_pil(y).save('tmp/y.png')
-            break
+            self.item = self.ds.items[i]
+            if self.a.id:
+                if self.a.id == self.item.id:
+                    break
+            else:
+                if self.a.index == i:
+                    break
+            i += 1
 
 if __name__ == '__main__':
     c = C()

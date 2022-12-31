@@ -15,7 +15,7 @@ from torch.utils.data import Dataset
 import pydicom
 from gimpformats.gimpXcfDocument import GimpDocument
 
-from endaaman import Commander, with_wrote, with_log
+from endaaman import Commander, with_wrote, with_log, pad_to_square
 
 
 class ROI(NamedTuple):
@@ -112,16 +112,6 @@ def get_res_code_by_image(img):
         t = 'unknown'
     return t
 
-
-def pad2square(img, new_size=None):
-    M = max(img.size)
-    bg = Image.new(mode=img.mode, size=(M, M))
-    x = (M - img.width) // 2
-    y = (M - img.height) // 2
-    bg.paste(img, (x, y))
-    if new_size:
-        bg = bg.resize((new_size, new_size))
-    return bg
 
 class C(Commander):
     def arg_convert_dicom(self, parser):
@@ -281,7 +271,7 @@ class C(Commander):
             }
 
             for name, img in targets.items():
-                img = pad2square(img, 720)
+                img = pad_to_square(img, 720)
                 d = os.path.join(self.args.dest, name)
                 os.makedirs(d, exist_ok=True)
                 img.save(os.path.join(d, f'{idx}_{name}.png'))
