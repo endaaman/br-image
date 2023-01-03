@@ -132,7 +132,7 @@ class CMD(TorchCommander):
         plt.savefig(os.path.join(d, 'roc.png'))
         plt.close()
 
-        dest_path = os.path.join(d, f'report.xlsx')
+        dest_path = os.path.join(d, 'report.xlsx')
         with pd.ExcelWriter(dest_path) as w: # pylint: disable=abstract-class-instantiated
             df.to_excel(w, sheet_name='values', index=False)
             for t, m in mm.items():
