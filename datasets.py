@@ -5,8 +5,8 @@ import shutil
 from glob import glob
 from typing import NamedTuple, Callable
 from collections import OrderedDict
-from endaaman import Commander, pad_to_square
-from endaaman.torch import calc_mean_and_std, pil_to_tensor, tensor_to_pil
+from endaaman import Commander, pad_to_size
+from endaaman.torch import pil_to_tensor, tensor_to_pil
 
 import torch
 import numpy as np
@@ -214,7 +214,7 @@ class CroppedDataset(BaseDataset):
         # if bg.height < cropped.height:
         #     print('h', idx, bg.height, cropped.height)
 
-        img = pad_to_square(cropped, self.size)
+        img = pad_to_size(cropped, size=self.size)
         return Item(id=idx,
                     image=img,
                     diagnosis=row['diagnosis'],
