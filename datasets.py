@@ -72,17 +72,19 @@ class MaximumSquareRandomCrop(ImageOnlyTransform):
 
 class BaseDataset(Dataset):
     def __init__(self, target='all', aug_mode='same', size=512,
-                 normalize=True, test_ratio=0.25, len_scale=1, seed=42):
+                 normalize=True, train_test=0.25, len_scale=1, seed=42):
         self.target = target
         self.size = size
-        self.test_ratio = test_ratio
+        self.train_test = train_test
         self.len_scale = len_scale
         self.seed = seed
 
         # margin = size//20
         augs = {}
         augs['train'] = [
-            A.Resize(width=size, height=size),
+            # A.CenterCrop(width=size, height=size),
+            # A.RandomCrop(width=size, height=size),
+            # A.Resize(width=size, height=size),
             A.RandomResizedCrop(width=size, height=size, scale=[0.9, 1.1]),
 
             A.HorizontalFlip(p=0.5),
@@ -100,11 +102,13 @@ class BaseDataset(Dataset):
                 A.Emboss(),
                 A.RandomBrightnessContrast(),
             ], p=0.3),
-            # A.HueSaturationValue(p=0.3),
+
+            A.HueSaturationValue(p=0.3),
         ]
 
         augs['test'] = [
             A.Resize(width=size, height=size),
+            # A.CenterCrop(width=size, height=size),
         ]
 
         augs['all'] = augs['test']
@@ -126,16 +130,24 @@ class BaseDataset(Dataset):
 
     def load_data(self):
         df_all = pd.read_excel('data/label.xlsx', index_col=0)
-        df_all['test'] = 0
-        df_train, df_test = train_test_split(
-            df_all,
-            test_size=self.test_ratio,
-            stratify=df_all.diagnosis,
-            random_state=self.seed)
+        if isinstance(self.train_test, str):
+            df_all = df_all[df_all['id'] > 0]
+            df_sp = pd.read_excel(self.train_test, index_col=0)
+            df_all = pd.merge(df_all.reset_index(), df_sp, on='id')
 
-        df_test['test'] = 1
-        # df_train['test'] = 0
-        df_all.loc[df_test.index, 'test'] = 1
+            df_all = df_all.set_index('name')
+            df_train = df_all[df_all['test'] < 1]
+            df_test = df_all[df_all['test'] > 0]
+        else:
+            df_train, df_test = train_test_split(
+                df_all,
+                test_size=self.train_test,
+                stratify=df_all.diagnosis,
+                random_state=self.seed)
+
+            df_test['test'] = 1
+            df_train['test'] = 0
+            df_all.loc[df_test.index, 'test'] = 1
 
         self.df = {
             'all': df_all,
@@ -271,6 +283,7 @@ class C(Commander):
         d = self.args.dest or t
         dest = f'tmp/samples_{self.a.mode}/{d}'
         os.makedirs(dest, exist_ok=True)
+        print(f'dest {dest}')
         total = self.args.length or len(self.ds)
         i = 0
         for x, y in tqdm(self.ds, total=total):

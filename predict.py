@@ -17,12 +17,36 @@ from PIL import Image, ImageDraw, ImageFont
 
 # from gradcam.utils import visualize_cam
 # from gradcam import GradCAM, GradCAMpp
-from endaaman.torch import TorchCommander, pil_to_tensor
+from endaaman.torch import TorchCommander, pil_to_tensor, Predictor
 from endaaman.metrics import MultiAccuracy
 from endaaman.utils import with_wrote
 
-from models import create_model, available_models
-from datasets import USDataset, MEAN, STD
+from models import create_model
+from datasets import PEMDataset, MEAN, STD
+
+
+class MyPredictor(Predictor):
+    def prepare(self, **kwargs):
+        self.font = ImageFont.truetype('/usr/share/fonts/ubuntu/Ubuntu-R.ttf', 48)
+        self.transform_image = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(MEAN, STD),
+        ])
+
+        model = create_model(self.checkpoint.model_name).to(self.device)
+        model.load_state_dict(self.checkpoint.model_state)
+        model.eval()
+        return model
+
+    def eval(self, inputs):
+        return self.model(inputs.to(self.device), activate=True)
+
+    # def predict_image(self, image, grid_size=-1):
+    #     if grid_size < 0:
+    #         return self.predict_images([image], batch_size=1)[0]
+    #     ii = grid_split(image, size=grid_size, flattern=True)
+    #     preds = self.predict_images(ii, batch_size=self.batch_size)
+    #     return torch.stack(preds).sum(dim=0) / len(preds)
 
 
 
@@ -33,46 +57,37 @@ class CMD(TorchCommander):
     def pre_common(self):
         self.checkpoint = torch.load(self.args.checkpoint, map_location=lambda storage, loc: storage)
         # self.checkpoint = torch.load(self.args.checkpoint)
-        self.model_name = self.checkpoint.name
-        self.model = create_model(self.model_name, 1).to(self.device)
-        self.model.load_state_dict(self.checkpoint.model_state)
-        self.model.eval()
-
-        self.font = ImageFont.truetype('/usr/share/fonts/ubuntu/Ubuntu-R.ttf', 24)
-
-    def predict_images(self, images):
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(MEAN, STD),
-        ])
-
-        outputs = []
-        for image in tqdm(images):
-            t = transform(image).unsqueeze(0).to(self.device)
-            with torch.no_grad():
-                o = self.model(t).detach().cpu()
-            outputs += o
-        return outputs
-
+        self.predictor = MyPredictor(self.checkpoint, self.a.batch_size, self.device)
 
     def arg_dataset(self, parser):
         # parser.add_argument('--target', '-t', choices=['test', 'train', 'all'], default='all')
+        parser.add_argument('--mode', default='pe')
         parser.add_argument('--out-dir', '-o', default='out')
+        parser.add_argument('--split', default='0.25')
 
     def run_dataset(self):
-        dataset = USDataset(
+        try:
+            split = float(self.a.split)
+        except ValueError as _:
+            split = self.a.split
+
+        dataset = PEMDataset(
             target='all',
-            normalize=False, aug_mode='none'
+            mode=self.a.mode,
+            normalize=False,
+            aug_mode='none',
+            train_test=split,
         )
 
-        results = self.predict_images([i.image for i in dataset.items])
+        results = self.predictor.predict_images([i.image for i in dataset.items])
 
+        # each items
         oo = []
         for (item, result) in zip(dataset.items, results):
             result = result.tolist()
             pred = float(result[0])
             oo.append({
-                'id': item.id,
+                'name': item.id,
                 'test': int(item.test),
                 'gt': int(item.diagnosis),
                 'pred': pred,
@@ -85,18 +100,11 @@ class CMD(TorchCommander):
             'all': df_all,
         }
 
-        print(dfs)
-
+        # metrics by conditions
         mm = OrderedDict()
-
         for t in ['train', 'test', 'all']:
             df = dfs[t]
             m = {}
-            print(t, df)
-            print('gt')
-            print(df['gt'])
-            print('pred')
-            print(df['pred'])
             fpr, tpr, thresholds = metrics.roc_curve(df['gt'], df['pred'])
             auc = metrics.auc(fpr, tpr)
             plt.plot(fpr, tpr, label=f'{t} auc={auc:.3f}')
@@ -126,7 +134,7 @@ class CMD(TorchCommander):
         plt.ylabel('True Positive Rate')
         plt.grid(True)
 
-        d = os.path.join(self.args.out_dir, self.checkpoint.full_name())
+        d = os.path.join(self.args.out_dir, self.checkpoint.trainer_name)
         os.makedirs(d, exist_ok=True)
 
         plt.savefig(os.path.join(d, 'roc.png'))

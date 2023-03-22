@@ -15,7 +15,7 @@ from torch.utils.data import Dataset
 import pydicom
 from gimpformats.gimpXcfDocument import GimpDocument
 
-from endaaman import Commander, with_wrote, with_log, pad_to_square
+from endaaman import Commander, with_wrote, with_log, pad_to_size
 
 
 class ROI(NamedTuple):
@@ -299,6 +299,24 @@ class C(Commander):
             prj = GimpDocument(p)
             d = os.path.join(self.args.dest, f'{name}.png')
             prj.layers[0].image.save(d)
+
+
+    def run_drop_ba(self):
+        df = pd.read_excel('data/label.xlsx', index_col=0)
+        df = df.reset_index()
+
+        df['id'] = -1
+        for idx, row in df.iterrows():
+            m = re.match(r'^.*(\d\d\d)_\d$', row['name'])
+            if not m:
+                raise RuntimeError('Invalid row:', idx, row)
+            df.loc[idx, 'id'] = int(m[1])
+
+        df.duplicated(keep='last')
+        df.loc[df['id'].duplicated(keep='first'), 'id'] = -1
+
+        df.to_excel(with_wrote('data/label_new.xlsx'), index=False)
+
 
 c = C()
 c.run()

@@ -11,7 +11,7 @@ import torch
 from torch import nn
 from torch import optim
 from timm.scheduler.cosine_lr import CosineLRScheduler
-from endaaman.torch import TrainCommander
+from endaaman.torch import TorchCommander
 from endaaman.trainer import Trainer
 from endaaman.metrics import BinaryAccuracy, BinaryAUC, BinaryRecall, BinarySpecificity
 
@@ -31,15 +31,22 @@ class FocalBCELoss(nn.Module):
         focal_loss = (1-bce_exp)**self.gamma * bce
         return focal_loss.mean()
 
-class T(Trainer):
+class MyTrainer(Trainer):
     def prepare(self, **kwargs):
+        self.t_warmup = kwargs.pop('lr_warmup', 5)
+        self.lr_min = kwargs.pop('lr_min', self.lr/10)
+
         # self.criterion = FocalBCELoss(gamma=4.0)
         self.criterion = nn.BCELoss()
+        model = create_model(self.model_name)
+        return model.to(self.device)
 
-    def create_scheduler(self, lr):
+    def create_scheduler(self, total_epoch):
         return CosineLRScheduler(
-            self.optimizer, t_initial=100, lr_min=0.00001,
-            warmup_t=10, warmup_lr_init=0.00005, warmup_prefix=True)
+            self.optimizer,
+            warmup_t=self.t_warmup, t_initial=total_epoch,
+            warmup_lr_init=self.lr/2, lr_min=self.lr_min,
+            warmup_prefix=True)
 
     def hook_load_state(self, checkpoint):
         self.scheduler.step(checkpoint.epoch-1)
@@ -47,9 +54,9 @@ class T(Trainer):
     def step(self, train_loss):
         self.scheduler.step(self.current_epoch)
 
-    def eval(self, inputs, labels):
+    def eval(self, inputs, gts):
         outputs = self.model(inputs.to(self.device))
-        loss = self.criterion(outputs, labels.to(self.device))
+        loss = self.criterion(outputs, gts.to(self.device))
         return loss, outputs
 
     def get_metrics(self):
@@ -65,40 +72,42 @@ class T(Trainer):
         }
 
 
-class CMD(TrainCommander):
+class CMD(TorchCommander):
     def arg_common(self, parser):
         parser.add_argument('--model', '-m', default='tf_efficientnetv2_b0')
 
     def arg_start(self, parser):
         parser.add_argument('--size', type=int, default=512)
         parser.add_argument('--short', action='store_true')
-        parser.add_argument('--mode', default='pem')
+        parser.add_argument('--mode', default='pe')
+        parser.add_argument('--split', default='0.25')
 
     def run_start(self):
-        model = create_model(self.args.model)
+        try:
+            split = float(self.a.split)
+        except ValueError as _:
+            split = self.a.split
 
         loaders = [self.as_loader(PEMDataset(
             size=self.args.size,
             target=t,
             mode=self.args.mode,
+            train_test=split,
             len_scale=0.02 if self.args.short else 1,
         )) for t in ['train', 'test']]
 
-        trainer = T(
-            name=self.args.model,
-            model=model,
+        trainer = self.create_trainer(
+            MyTrainer,
+            model_name=self.a.model,
             loaders=loaders,
-            device=self.device,
-            save_period=self.args.save_period,
-            suffix=self.args.suffix,
         )
 
-        trainer.start(self.args.epoch, lr=self.args.lr)
+        trainer.start(self.args.epoch)
 
 
 if __name__ == '__main__':
     cmd = CMD({
-        'epoch': 100,
+        'epoch': 30,
         'lr': 0.0001,
         'batch_size': 16,
     })
