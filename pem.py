@@ -93,7 +93,6 @@ class CMD(TorchCommander):
             target=t,
             mode=self.args.mode,
             train_test=split,
-            len_scale=0.02 if self.args.short else 1,
         )) for t in ['train', 'test']]
 
         trainer = self.create_trainer(

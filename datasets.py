@@ -76,7 +76,6 @@ class BaseDataset(Dataset):
         self.target = target
         self.size = size
         self.train_test = train_test
-        self.len_scale = len_scale
         self.seed = seed
 
         # margin = size//20
@@ -163,7 +162,7 @@ class BaseDataset(Dataset):
                 self.items.append(item)
 
     def __len__(self):
-        return int(len(self.items) * self.len_scale)
+        return len(self.items)
 
     def __getitem__(self, idx):
         raise RuntimeError('Do override')
