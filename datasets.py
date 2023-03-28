@@ -22,6 +22,8 @@ from albumentations.pytorch.transforms import ToTensorV2
 from albumentations.core.transforms_interface import ImageOnlyTransform
 from albumentations.augmentations.crops.functional import center_crop, random_crop
 
+from endaaman.torch import get_global_seed
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class Item(NamedTuple):
@@ -72,7 +74,7 @@ class MaximumSquareRandomCrop(ImageOnlyTransform):
 
 class BaseDataset(Dataset):
     def __init__(self, target='all', aug_mode='same', size=512,
-                 normalize=True, train_test=0.25, len_scale=1, seed=42):
+                 normalize=True, train_test=0.25, seed=get_global_seed()):
         self.target = target
         self.size = size
         self.train_test = train_test
