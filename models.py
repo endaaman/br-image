@@ -42,6 +42,17 @@ class TimmModel(nn.Module):
 def create_model(s):
     return TimmModel(name=s, num_classes=1)
 
+class FocalBCELoss(nn.Module):
+    def __init__(self, gamma):
+        super().__init__()
+        self.gamma = gamma
+        self.bceloss = nn.BCELoss(reduction='none')
+
+    def forward(self, outputs, targets):
+        bce = self.bceloss(outputs, targets)
+        bce_exp = torch.exp(-bce)
+        focal_loss = (1-bce_exp)**self.gamma * bce
+        return focal_loss.mean()
 
 SMP_ARGS = dict(in_channels=3, activation='sigmoid', classes=1, encoder_weights=None)
 
