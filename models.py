@@ -4,6 +4,7 @@ from typing import NamedTuple
 import torch
 from torch import nn
 from torchvision import transforms, models
+import torch.nn.functional as F
 import timm
 import segmentation_models_pytorch as smp
 
@@ -20,13 +21,21 @@ class TimmModel(nn.Module):
     def get_cam_layer(self):
         return self.base.conv_head
 
-    def forward(self, x, activate=True):
-        x = self.base(x)
+    def forward(self, x, activate=True, with_features=False):
+        x = self.base.forward_features(x)
+        x = self.base.global_pool(x)
+        if self.base.drop_rate > 0.:
+            x = F.dropout(x, p=self.base.drop_rate, training=self.base.training)
+        features = x
+        x = self.base.classifier(x)
+
         if activate:
             if self.num_classes > 1:
                 x = torch.softmax(x, dim=1)
             else:
                 x = torch.sigmoid(x)
+        if with_features:
+            return x, features
         return x
 
 

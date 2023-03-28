@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 # from gradcam import GradCAM, GradCAMpp
 from endaaman.torch import TorchCommander, pil_to_tensor, Predictor
 from endaaman.metrics import MultiAccuracy
-from endaaman.utils import with_wrote
+from endaaman.utils import with_wrote, get_images_from_dir_or_file
 
 from models import create_model
 from datasets import PEMDataset, MEAN, STD
@@ -39,7 +39,11 @@ class MyPredictor(Predictor):
         return model
 
     def eval(self, inputs):
-        return self.model(inputs.to(self.device), activate=True)
+        features, pp = self.model(inputs.to(self.device), activate=True, with_features=True)
+        return list(zip(features, pp))
+
+    def collate(self, pred, idx):
+        return pred
 
     # def predict_image(self, image, grid_size=-1):
     #     if grid_size < 0:
@@ -79,15 +83,16 @@ class CMD(TorchCommander):
             train_test=split,
         )
 
-        results = self.predictor.predict_images([i.image for i in dataset.items])
+        results = self.predictor.predict([i.image for i in dataset.items])
+        pp, features = zip(*results)
 
         # each items
         oo = []
-        for (item, result) in zip(dataset.items, results):
-            result = result.tolist()
-            pred = float(result[0])
+        for (item, p) in zip(dataset.items, pp):
+            pred = float(p.tolist()[0])
             oo.append({
-                'name': item.id,
+                'name': item.name,
+                'id': item.id,
                 'test': int(item.test),
                 'gt': int(item.diagnosis),
                 'pred': pred,
@@ -146,25 +151,17 @@ class CMD(TorchCommander):
             for t, m in mm.items():
                 m.to_excel(w, sheet_name=f'{t} metrics')
 
-    def load_images_from_dir_or_file(self, src):
-        paths = []
-        if os.path.isdir(src):
-            paths = os.path.join(src, '*.jpg') + os.path.join(src, '*.png')
-            images = [Image.open(p) for p in paths]
-        elif os.path.isfile(src):
-            paths = [src]
-            images = [Image.open(src)]
-
-        if len(images) == 0:
-            raise RuntimeError(f'Invalid src: {src}')
-
-        return images, paths
+        features_dir = os.path.join(d, 'features')
+        os.makedirs(features_dir, exist_ok=True)
+        for (item, f) in zip(dataset.items, features):
+            path = os.path.join(features_dir, f'{item.name}')
+            np.save(path, f.cpu().detach().numpy())
 
     def arg_predict(self, parser):
         parser.add_argument('--src', '-s', required=True)
 
     def run_predict(self):
-        images, paths = self.load_images_from_dir_or_file(self.args.src)
+        images, paths = get_images_from_dir_or_file(self.args.src, with_path=True)
 
         results = self.predict_images(images)
 

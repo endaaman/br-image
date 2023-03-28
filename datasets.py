@@ -27,12 +27,14 @@ from endaaman.torch import get_global_seed
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class Item(NamedTuple):
+    name: str
     id: int
     image: ImageType
     diagnosis: bool
     test: bool
 
 class MaskItem(NamedTuple):
+    name: str
     id: int
     image: ImageType
     mask: ImageType
@@ -132,7 +134,6 @@ class BaseDataset(Dataset):
     def load_data(self):
         df_all = pd.read_excel('data/label.xlsx', index_col=0)
         if isinstance(self.train_test, str):
-            df_all = df_all[df_all['id'] > 0]
             df_sp = pd.read_excel(self.train_test, index_col=0)
             df_all = pd.merge(df_all.reset_index(), df_sp, on='id')
 
@@ -158,8 +159,8 @@ class BaseDataset(Dataset):
 
         self.items = []
 
-        for idx, row in tqdm(self.df.iterrows(), total=len(self.df)):
-            item = self.load_item(idx, row)
+        for name, row in tqdm(self.df.iterrows(), total=len(self.df)):
+            item = self.load_item(name, row)
             if item:
                 self.items.append(item)
 
@@ -171,10 +172,11 @@ class BaseDataset(Dataset):
 
 
 class SegDataset(BaseDataset):
-    def load_item(self, idx, row):
-        img = Image.open(f'data/crop/pe/{idx}_pe.png').copy()
-        mask = Image.open(f'data/crop/m/{idx}_m.png').copy()
-        return MaskItem(id=idx,
+    def load_item(self, name, row):
+        img = Image.open(f'data/crop/pe/{name}_pe.png').copy()
+        mask = Image.open(f'data/crop/m/{name}_m.png').copy()
+        return MaskItem(name=name,
+                        id=row.id,
                         image=img,
                         mask=mask,
                         test=row['test'])
@@ -196,9 +198,10 @@ class PEMDataset(BaseDataset):
         self.mode = kwargs.pop('mode') # ['p', 'e', 'pe', 'pem']
         super().__init__(**kwargs)
 
-    def load_item(self, idx, row):
-        img = Image.open(f'data/crop/{self.mode}/{idx}_{self.mode}.png').copy()
-        return Item(id=idx,
+    def load_item(self, name, row):
+        img = Image.open(f'data/crop/{self.mode}/{name}_{self.mode}.png').copy()
+        return Item(name=name,
+                    id=row.id,
                     image=img,
                     diagnosis=row['diagnosis'],
                     test=row['test'])
@@ -211,24 +214,25 @@ class PEMDataset(BaseDataset):
 
 
 class CroppedDataset(BaseDataset):
-    def load_item(self, idx, row):
-        mask = np.array(Image.open(f'data/crop/m/{idx}_m.png'))
+    def load_item(self, name, row):
+        mask = np.array(Image.open(f'data/crop/m/{name}_m.png'))
         if not np.any(mask):
             # skip if mask is empty
             return None
         h = np.where(np.sum(mask, axis=1))[0][[0, -1]]
         w = np.where(np.sum(mask, axis=0))[0][[0, -1]]
-        pe = Image.open(f'data/crop/pe/{idx}_pe.png')
+        pe = Image.open(f'data/crop/pe/{name}_pe.png')
         cropped = pe.crop((w[0], h[0], w[1], h[1]))
         # bg = Image.new('RGB', (self.size, self.size))
         # paste_center(bg, cropped)
         # if bg.width < cropped.width:
-        #     print('w', idx, bg.width, cropped.width)
+        #     print('w', name, bg.width, cropped.width)
         # if bg.height < cropped.height:
-        #     print('h', idx, bg.height, cropped.height)
+        #     print('h', name, bg.height, cropped.height)
 
         img = pad_to_size(cropped, size=self.size)
-        return Item(id=idx,
+        return Item(name=name,
+                    id=row.id,
                     image=img,
                     diagnosis=row['diagnosis'],
                     test=row['test'])
@@ -294,7 +298,7 @@ class C(Commander):
             self.y = y
             item = self.ds.items[i]
             img = tensor_to_pil(x)
-            img.save(f'{dest}/{item.id}_{int(y)}.png')
+            img.save(f'{dest}/{item.name}_{int(y)}.png')
             i += 1
 
     def arg_t(self, parser):
@@ -308,7 +312,7 @@ class C(Commander):
             self.y = y
             self.item = self.ds.items[i]
             if self.a.id:
-                if self.a.id == self.item.id:
+                if self.a.id == self.item.name:
                     break
             else:
                 if self.a.index == i:
