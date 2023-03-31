@@ -13,8 +13,8 @@ from torch import nn
 from torch import optim
 from timm.scheduler.cosine_lr import CosineLRScheduler
 
-from endaaman.torch import TorchCommander, get_torch_args
 from endaaman.cli import BaseCLI
+from endaaman.ml import define_torch_args
 from endaaman.trainer import Trainer
 from endaaman.metrics import BinaryAccuracy, BinaryAUC, BinaryRecall, BinarySpecificity
 
@@ -70,7 +70,7 @@ class MyTrainer(Trainer):
             },
         }
 
-DefaultArgs = get_torch_args(
+DefaultArgs = define_torch_args(
     epoch=30,
     lr=0.0001,
     batch_size=16,
@@ -83,7 +83,6 @@ class CLI(BaseCLI):
 
     class StartArgs(CommonArgs):
         size:int = 512
-        experiment_name:str = Field('', cli=('--exp', ))
         mode:str = 'pe'
         cosine:int = -1
         split:str = '0.25'
@@ -98,15 +97,17 @@ class CLI(BaseCLI):
             size=a.size,
             target=t,
             mode=a.mode,
-            train_test=split,
+            split=split,
         )) for t in ['train', 'test']]
 
         trainer = a.create_trainer(
             TrainerClass=MyTrainer,
             model_name=a.model_name,
             loaders=loaders,
-            experiment_name=self.a.exp,
-            cosine=self.a.cosine,
+            experiment_name=self.a.experiment_name,
+            extra=dict(
+                cosine=self.a.cosine,
+            )
         )
 
         trainer.start(a.epoch)

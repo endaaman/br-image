@@ -6,7 +6,7 @@ from glob import glob
 from typing import NamedTuple, Callable
 from collections import OrderedDict
 from endaaman import Commander, pad_to_size
-from endaaman.torch import pil_to_tensor, tensor_to_pil
+from endaaman.ml import pil_to_tensor, tensor_to_pil
 
 import torch
 import numpy as np
@@ -22,7 +22,7 @@ from albumentations.pytorch.transforms import ToTensorV2
 from albumentations.core.transforms_interface import ImageOnlyTransform
 from albumentations.augmentations.crops.functional import center_crop, random_crop
 
-from endaaman.torch import get_global_seed
+from endaaman.ml import get_global_seed
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -76,10 +76,10 @@ class MaximumSquareRandomCrop(ImageOnlyTransform):
 
 class BaseDataset(Dataset):
     def __init__(self, target='all', aug_mode='same', size=512,
-                 normalize=True, train_test=0.25, seed=get_global_seed()):
+                 normalize=True, split=0.25, seed=get_global_seed()):
         self.target = target
         self.size = size
-        self.train_test = train_test
+        self.split = split
         self.seed = seed
 
         # margin = size//20
@@ -133,18 +133,21 @@ class BaseDataset(Dataset):
 
     def load_data(self):
         df_all = pd.read_excel('data/label.xlsx', index_col=0)
-        if isinstance(self.train_test, str):
-            df_sp = pd.read_excel(self.train_test, index_col=0)
-            df_all = pd.merge(df_all.reset_index(), df_sp, on='id')
+        df_all = df_all[df_all['skip'] < 1]
+        if isinstance(self.split, str):
+            df_sp = pd.read_excel(self.split, index_col=0)
+            # left join
+            df_all = df_all.merge(df_sp, left_on='id_head', right_on='id', how='left')
+            # if NA, set train
+            df_all.loc[df_all['test'].isna(), 'test'] = 0
 
-            df_all = df_all.set_index('name')
             df_train = df_all[df_all['test'] < 1]
             df_test = df_all[df_all['test'] > 0]
         else:
             df_train, df_test = train_test_split(
                 df_all,
-                test_size=self.train_test,
-                stratify=df_all.diagnosis,
+                test_size=self.split,
+                stratify=df_all['diagnosis'],
                 random_state=self.seed)
 
             df_test['test'] = 1

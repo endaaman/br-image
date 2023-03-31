@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # from gradcam.utils import visualize_cam
 # from gradcam import GradCAM, GradCAMpp
-from endaaman.torch import TorchCommander, pil_to_tensor, Predictor
+from endaaman.ml import TorchCommander, pil_to_tensor, Predictor
 from endaaman.metrics import MultiAccuracy
 from endaaman.utils import with_wrote, get_images_from_dir_or_file
 

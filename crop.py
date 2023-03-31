@@ -11,7 +11,7 @@ import torch
 from torch import nn
 from torch import optim
 from timm.scheduler.cosine_lr import CosineLRScheduler
-from endaaman.torch import TrainCommander
+from endaaman.ml import TrainCommander
 from endaaman.trainer import Trainer
 from endaaman.metrics import BinaryAccuracy, BinaryAUC, BinaryRecall, BinarySpecificity
 

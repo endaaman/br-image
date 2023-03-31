@@ -312,8 +312,8 @@ class C(Commander):
                 raise RuntimeError('Invalid row:', idx, row)
             df.loc[idx, 'id'] = int(m[1])
 
-        df.duplicated(keep='last')
-        df.loc[df['id'].duplicated(keep='first'), 'id'] = -1
+        # df.duplicated(keep='last')
+        # df.loc[df['id'].duplicated(keep='first'), 'id'] = -1
 
         df.to_excel(with_wrote('data/label_new.xlsx'), index=False)
 
