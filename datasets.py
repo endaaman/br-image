@@ -137,10 +137,12 @@ class BaseDataset(Dataset):
         if isinstance(self.split, str):
             df_sp = pd.read_excel(self.split, index_col=0)
             # left join
-            df_all = df_all.merge(df_sp, left_on='id_head', right_on='id', how='left')
+            df_all = df_all \
+                .reset_index() \
+                .merge(df_sp, left_on='id_head', right_on='id', how='left') \
+                .set_index('name')
             # if NA, set train
             df_all.loc[df_all['test'].isna(), 'test'] = 0
-
             df_train = df_all[df_all['test'] < 1]
             df_test = df_all[df_all['test'] > 0]
         else:

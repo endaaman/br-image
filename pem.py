@@ -27,6 +27,7 @@ class MyTrainer(Trainer):
         extra = extra or {}
         self.cosine = extra.pop('cosine', -1)
         assert len(extra) == 0
+        print(self.cosine)
 
         # self.criterion = FocalBCELoss(gamma=4.0)
         self.criterion = nn.BCELoss()
@@ -72,7 +73,7 @@ class MyTrainer(Trainer):
 
 DefaultArgs = define_torch_args(
     epoch=30,
-    lr=0.0001,
+    lr=0.001,
     batch_size=16,
 )
 

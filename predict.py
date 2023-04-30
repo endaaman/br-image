@@ -19,28 +19,33 @@ from PIL import Image, ImageDraw, ImageFont
 # from gradcam import GradCAM, GradCAMpp
 from endaaman.ml import TorchCommander, pil_to_tensor, Predictor
 from endaaman.metrics import MultiAccuracy
-from endaaman.utils import with_wrote, get_images_from_dir_or_file
+from endaaman.utils import with_wrote, load_images_from_dir_or_file
 
 from models import create_model
 from datasets import PEMDataset, MEAN, STD
 
 
 class MyPredictor(Predictor):
-    def prepare(self, **kwargs):
+    def prepare(self, extra):
+        extra = extra or {}
+        self.need_features = extra.pop('need_features', False)
+        assert len(extra) == 0, f'Invalid extra option: {extra}'
+
         self.font = ImageFont.truetype('/usr/share/fonts/ubuntu/Ubuntu-R.ttf', 48)
         self.transform_image = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(MEAN, STD),
         ])
-
         model = create_model(self.checkpoint.model_name).to(self.device)
         model.load_state_dict(self.checkpoint.model_state)
         model.eval()
         return model
 
     def eval(self, inputs):
-        features, pp = self.model(inputs.to(self.device), activate=True, with_features=True)
-        return list(zip(features, pp))
+        if self.need_features:
+            features, pp = self.model(inputs.to(self.device), activate=True, with_features=True)
+            return list(zip(features, pp))
+        return self.model(inputs.to(self.device), activate=True)
 
     def collate(self, pred, idx):
         return pred
@@ -57,16 +62,24 @@ class MyPredictor(Predictor):
 class CMD(TorchCommander):
     def arg_common(self, parser):
         parser.add_argument('--checkpoint', '-c', required=True)
+        parser.add_argument('--features', action='store_true')
 
     def pre_common(self):
         self.checkpoint = torch.load(self.args.checkpoint, map_location=lambda storage, loc: storage)
         # self.checkpoint = torch.load(self.args.checkpoint)
-        self.predictor = MyPredictor(self.checkpoint, self.a.batch_size, self.device)
+        self.predictor = MyPredictor(
+            checkpoint=self.checkpoint,
+            batch_size=self.a.batch_size,
+            device=self.device,
+            extra=dict(
+                need_features=self.a.features,
+            ))
 
     def arg_dataset(self, parser):
         # parser.add_argument('--target', '-t', choices=['test', 'train', 'all'], default='all')
+        parser.add_argument('--size', type=int, default=768)
+        parser.add_argument('--dest', '-d', required=True)
         parser.add_argument('--mode', default='pe')
-        parser.add_argument('--out-dir', '-o', default='out')
         parser.add_argument('--split', default='0.25')
 
     def run_dataset(self):
@@ -80,11 +93,15 @@ class CMD(TorchCommander):
             mode=self.a.mode,
             normalize=False,
             aug_mode='none',
-            train_test=split,
+            split=split,
         )
 
-        results = self.predictor.predict([i.image for i in dataset.items])
-        pp, features = zip(*results)
+        ii = [i.image.resize((self.a.size, self.a.size)) for i in dataset.items]
+        results = self.predictor.predict(ii)
+        if self.a.features:
+            pp, features = zip(*results)
+        else:
+            pp = results
 
         # each items
         oo = []
@@ -139,29 +156,29 @@ class CMD(TorchCommander):
         plt.ylabel('True Positive Rate')
         plt.grid(True)
 
-        d = os.path.join(self.args.out_dir, self.checkpoint.trainer_name)
-        os.makedirs(d, exist_ok=True)
+        os.makedirs(self.a.dest, exist_ok=True)
 
-        plt.savefig(os.path.join(d, 'roc.png'))
+        plt.savefig(os.path.join(self.a.dest, 'roc.png'))
         plt.close()
 
-        dest_path = os.path.join(d, 'report.xlsx')
+        dest_path = os.path.join(self.a.dest, 'report.xlsx')
         with pd.ExcelWriter(dest_path) as w: # pylint: disable=abstract-class-instantiated
             df.to_excel(w, sheet_name='values', index=False)
             for t, m in mm.items():
                 m.to_excel(w, sheet_name=f'{t} metrics')
 
-        features_dir = os.path.join(d, 'features')
-        os.makedirs(features_dir, exist_ok=True)
-        for (item, f) in zip(dataset.items, features):
-            path = os.path.join(features_dir, f'{item.name}')
-            np.save(path, f.cpu().detach().numpy())
+        if self.a.features:
+            features_dir = os.path.join(self.a.dest, 'features')
+            os.makedirs(features_dir, exist_ok=True)
+            for (item, f) in zip(dataset.items, features):
+                path = os.path.join(features_dir, f'{item.name}')
+                np.save(path, f.cpu().detach().numpy())
 
     def arg_predict(self, parser):
         parser.add_argument('--src', '-s', required=True)
 
     def run_predict(self):
-        images, paths = get_images_from_dir_or_file(self.args.src, with_path=True)
+        images, paths = load_images_from_dir_or_file(self.args.src, with_path=True)
 
         results = self.predict_images(images)
 
