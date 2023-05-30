@@ -13,16 +13,18 @@ from torch import nn
 from torch import optim
 from timm.scheduler.cosine_lr import CosineLRScheduler
 
-from endaaman.cli import BaseCLI
-from endaaman.ml import define_torch_args
-from endaaman.trainer import Trainer
+from endaaman.ml import BaseMLArgs, BaseMLCLI, BaseTrainer, BaseTrainerConfig
 from endaaman.metrics import BinaryAccuracy, BinaryAUC, BinaryRecall, BinarySpecificity
 
 from models import create_model
 from datasets import PEMDataset
 
 
-class MyTrainer(Trainer):
+class TrainerConfig(BaseTrainerConfig):
+    pass
+
+
+class Trainer(BaseTrainer):
     def prepare(self, extra):
         extra = extra or {}
         self.cosine = extra.pop('cosine', -1)
@@ -71,15 +73,12 @@ class MyTrainer(Trainer):
             },
         }
 
-DefaultArgs = define_torch_args(
-    epoch=30,
-    lr=0.001,
-    batch_size=16,
-)
 
-
-class CLI(BaseCLI):
-    class CommonArgs(DefaultArgs):
+class CLI(BaseMLCLI):
+    class CommonArgs(BaseMLCLI.CommonArgs):
+        epoch:int = 30
+        batch_size:int = Field(16, cli=('--batch-size', '-B', ))
+        lr:float = 0.001
         model_name:str = Field('tf_efficientnetv2_b0', cli=('--model', ))
 
     class StartArgs(CommonArgs):
@@ -102,7 +101,7 @@ class CLI(BaseCLI):
         )) for t in ['train', 'test']]
 
         trainer = a.create_trainer(
-            TrainerClass=MyTrainer,
+            TrainerClass=,
             model_name=a.model_name,
             loaders=loaders,
             experiment_name=self.a.experiment_name,
