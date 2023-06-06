@@ -44,9 +44,6 @@ class TimmModel(nn.Module):
         return x
 
 
-def create_model(s):
-    return TimmModel(name=s, num_classes=1)
-
 class FocalBCELoss(nn.Module):
     def __init__(self, gamma):
         super().__init__()
