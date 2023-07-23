@@ -5,9 +5,8 @@ import shutil
 from glob import glob
 from typing import NamedTuple, Callable
 from collections import OrderedDict
-from endaaman import Commander, pad_to_size
-from endaaman.ml import pil_to_tensor, tensor_to_pil
 
+from pydantic import Field
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -22,7 +21,8 @@ from albumentations.pytorch.transforms import ToTensorV2
 from albumentations.core.transforms_interface import ImageOnlyTransform
 from albumentations.augmentations.crops.functional import center_crop, random_crop
 
-from endaaman.ml import get_global_seed
+from endaaman import pad_to_size
+from endaaman.ml import pil_to_tensor, tensor_to_pil, get_global_seed, BaseMLCLI
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -250,38 +250,35 @@ class CroppedDataset(BaseDataset):
 
 
 
-class C(Commander):
-    def arg_common(self, parser):
-        parser.add_argument('--target', '-t', default='all', choices=['all', 'train', 'test'])
-        parser.add_argument('--aug', '-a', default='same', choices=['same', 'train', 'test'])
-        parser.add_argument('--mode', '-m', default='pem', choices=['pe', 'pem', 'pem_', 'seg', 'crop'])
-        parser.add_argument('--size', '-s', type=int, default=512)
-        # parser.add_argument('--a-flip', action='store_true')
-        # parser.add_argument('--a-rotate', type=int, default=10)
-        # parser.add_argument('--a-shrink', type=float, default=0.3)
+class CLI(BaseMLCLI):
+    class CommonArgs(BaseMLCLI.CommonArgs):
+        target:str = Field('all', cli=('--target', '-t'), regex=r'^all|train|test$')
+        aug:str = Field('same', cli=('--aug', '-a'), regex=r'^same|train|test|none$')
+        mode:str = Field('pem', cli=('--mode', '-m'), regex=r'^pe|pem|pem_|seg|crop$')
+        size:int = Field(512, cli=('--size', '-s'))
 
-    def pre_common(self):
-        if self.a.mode == 'seg':
+    def pre_common(self, a):
+        if a.mode == 'seg':
             self.ds = SegDataset(
-                target=self.args.target,
-                aug_mode=self.args.aug,
-                size=self.args.size,
-                normalize=self.args.function != 'samples',
+                target=a.target,
+                aug_mode=a.aug,
+                size=a.size,
+                normalize=a.function != 'samples',
             )
-        elif self.a.mode == 'crop':
+        elif a.mode == 'crop':
             self.ds = CroppedDataset(
-                target=self.args.target,
-                aug_mode=self.args.aug,
-                size=self.args.size,
-                normalize=self.args.function != 'samples',
+                target=a.target,
+                aug_mode=a.aug,
+                size=a.size,
+                normalize=a.function != 'samples',
             )
         else:
             self.ds = PEMDataset(
-                mode=self.args.mode,
-                target=self.args.target,
-                aug_mode=self.args.aug,
-                size=self.args.size,
-                normalize=self.args.function != 'samples',
+                mode=a.mode,
+                target=a.target,
+                aug_mode=a.aug,
+                size=a.size,
+                normalize=a.function != 'samples',
             )
 
     def arg_samples(self, parser):
@@ -306,9 +303,9 @@ class C(Commander):
             img.save(f'{dest}/{item.name}_{int(y)}.png')
             i += 1
 
-    def arg_t(self, parser):
-        parser.add_argument('--index', '-i', type=int, default=0)
-        parser.add_argument('--id', '-d', type=str)
+    class TArgs(CommonArgs):
+        index:int = Field(0, cli=('-i', ))
+        id:str = ''
 
     def run_t(self):
         i = 0
@@ -325,5 +322,13 @@ class C(Commander):
             i += 1
 
 if __name__ == '__main__':
-    c = C()
-    c.run()
+    # cli = CLI()
+    # cli.run()
+
+    ds = PEMDataset(
+        mode='pem',
+        target='all',
+        aug_mode='none',
+        size=512,
+        normalize=False,
+    )
